@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: stockdesk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stockdesk}
+      POSTGRES_DB: stockdesk
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockdesk"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  stockdesk:
+    build: .
+    ports:
+      - "8503:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://stockdesk:${POSTGRES_PASSWORD:-stockdesk}@db:5432/stockdesk
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
