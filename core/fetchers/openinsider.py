@@ -3,7 +3,7 @@ from __future__ import annotations
 import requests
 from bs4 import BeautifulSoup
 
-_BASE_URL = "http://openinsider.com/screener"
+_BASE_URL = "https://openinsider.com/screener"
 _TIMEOUT = 15
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; StockDesk/1.0)"}
 

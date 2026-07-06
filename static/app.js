@@ -366,7 +366,7 @@ function buildScoreTooltip(ticker, col) {
     case "composite": {
       category = scores.composite || {};
       title = "Score";
-      const weights = {fundamental_momentum: 30, value_quality: 30, insider_conviction: 25, price_opportunity: 15};
+      const weights = scores.composite?.weights || {fundamental_momentum: 30, value_quality: 30, insider_conviction: 25, price_opportunity: 15};
       const cats = [
         { key: "fundamental_momentum", label: "Growth"   },
         { key: "value_quality",        label: "Quality"  },
@@ -851,15 +851,17 @@ function getScore(d, col) {
   }
 }
 
+function _toggleSort(currentCol, currentDir, col) {
+  return currentCol === col ? [currentCol, currentDir * -1] : [col, -1];
+}
+
 function setPfSort(col) {
-  if (pfSortCol === col) pfSortDir *= -1;
-  else { pfSortCol = col; pfSortDir = -1; }
+  [pfSortCol, pfSortDir] = _toggleSort(pfSortCol, pfSortDir, col);
   renderHomeSections();
 }
 
 function setWlSort(col) {
-  if (wlSortCol === col) wlSortDir *= -1;
-  else { wlSortCol = col; wlSortDir = -1; }
+  [wlSortCol, wlSortDir] = _toggleSort(wlSortCol, wlSortDir, col);
   renderHomeSections();
 }
 
@@ -1037,18 +1039,24 @@ async function removeTicker(ticker) {
   renderHomeSections();
 }
 
-async function moveToPortfolio(ticker) {
-  await fetch(`/api/lists/${ticker}?list_type=portfolio`, {method: "PATCH"});
-  watchlist = watchlist.filter(t => t !== ticker);
-  if (!portfolio.includes(ticker)) portfolio.push(ticker);
+async function _moveTicker(ticker, targetList) {
+  await fetch(`/api/lists/${ticker}?list_type=${targetList}`, {method: "PATCH"});
+  if (targetList === "portfolio") {
+    watchlist = watchlist.filter(t => t !== ticker);
+    if (!portfolio.includes(ticker)) portfolio.push(ticker);
+  } else {
+    portfolio = portfolio.filter(t => t !== ticker);
+    if (!watchlist.includes(ticker)) watchlist.push(ticker);
+  }
   renderHomeSections();
 }
 
+async function moveToPortfolio(ticker) {
+  await _moveTicker(ticker, "portfolio");
+}
+
 async function moveToWatchlist(ticker) {
-  await fetch(`/api/lists/${ticker}?list_type=watchlist`, {method: "PATCH"});
-  portfolio = portfolio.filter(t => t !== ticker);
-  if (!watchlist.includes(ticker)) watchlist.push(ticker);
-  renderHomeSections();
+  await _moveTicker(ticker, "watchlist");
 }
 
 // ── Detail view ───────────────────────────────────────────────────────────────

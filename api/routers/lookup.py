@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 import logging
-from datetime import date, datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -14,12 +14,13 @@ from db.cache import (
 from db.models import MarketSnapshot
 from core.fetchers.yahoo import fetch_market_snapshot, fetch_fundamentals, init_auth
 from core.fetchers.openinsider import fetch_insider_transactions
-from core.scorers.composite import compute_all
+from api.routers._payload import build_payload
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
 _CACHE_TTL_SECONDS = 3600
+_auth_lock = asyncio.Lock()
 
 
 async def _snapshot_age_seconds(session: AsyncSession, ticker: str) -> float | None:
@@ -31,32 +32,11 @@ async def _snapshot_age_seconds(session: AsyncSession, ticker: str) -> float | N
         return None
     try:
         ts = datetime.fromisoformat(row.refreshed_at)
-        return (datetime.utcnow() - ts).total_seconds()
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - ts).total_seconds()
     except Exception:
         return None
-
-
-def _build_payload(ticker: str, snap: dict, funds: list[dict]) -> dict:
-    current_year = str(date.today().year)
-    annuals     = [f for f in funds if f.get("type") == "annual" and f.get("period") != current_year][:4]
-    quarterlies = [f for f in funds if f.get("type") == "quarterly"][:4]
-    snap_data   = {k: v for k, v in snap.items() if k not in ("returns", "insider_transactions")}
-    market_cap  = snap.get("market_cap")
-    recent_fcf  = next((f.get("fcf") for f in annuals if f.get("fcf") is not None), None)
-    snap_data["fcf_yield"] = (recent_fcf / market_cap) if (recent_fcf and market_cap) else None
-    try:
-        scores = compute_all(funds, snap)
-    except Exception as exc:
-        log.warning("[%s] score computation failed: %s", ticker, exc)
-        scores = None
-    return {
-        "snapshot":             snap_data,
-        "returns":              snap.get("returns", {}),
-        "annuals":              [{"period": f["period"], **{k: v for k, v in f.items() if k not in ("type", "period")}} for f in annuals],
-        "quarterlies":          [{"period": f["period"], **{k: v for k, v in f.items() if k not in ("type", "period")}} for f in quarterlies],
-        "insider_transactions": snap.get("insider_transactions", []),
-        "scores":               scores,
-    }
 
 
 @router.get("/lookup/{ticker}")
@@ -69,7 +49,8 @@ async def lookup_ticker(ticker: str, session: AsyncSession = Depends(get_session
 
     if age is None or age > _CACHE_TTL_SECONDS:
         log.info("[%s] lookup: fetching live data", ticker)
-        init_auth()
+        async with _auth_lock:
+            await asyncio.to_thread(init_auth)
         try:
             snap = await asyncio.to_thread(fetch_market_snapshot, ticker)
         except Exception as exc:
@@ -99,7 +80,7 @@ async def lookup_ticker(ticker: str, session: AsyncSession = Depends(get_session
         snap = await read_snapshot(session, ticker) or {}
 
     funds   = await read_all_fundamentals(session, ticker)
-    payload = _build_payload(ticker, snap, funds)
+    payload = build_payload(ticker, snap, funds)
 
     if not payload["snapshot"].get("price"):
         raise HTTPException(status_code=404, detail=f"No data found for {ticker}")

@@ -128,7 +128,13 @@ async def refresh_all() -> None:
         return
 
     log.info("Refresh queue: %s", ordered)
-    results = await asyncio.gather(*[refresh_one(t) for t in ordered], return_exceptions=True)
+    sem = asyncio.Semaphore(12)
+
+    async def bounded(t: str) -> None:
+        async with sem:
+            return await refresh_one(t)
+
+    results = await asyncio.gather(*[bounded(t) for t in ordered], return_exceptions=True)
     for ticker, res in zip(ordered, results):
         if isinstance(res, Exception):
             log.error("[%s] refresh failed: %s", ticker, res)
@@ -142,7 +148,7 @@ def start_scheduler() -> None:
         "interval",
         minutes=5,
         id="refresh_all",
-        next_run_time=datetime.utcnow(),
+        next_run_time=datetime.now(timezone.utc),
     )
     _scheduler.start()
     log.info("Scheduler started")

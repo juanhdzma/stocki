@@ -56,12 +56,14 @@ def compute_all(fundamentals: list[dict], snapshot: dict) -> dict:
         "price_opportunity":    po_score(snapshot),
     }
 
+    weights_pct = {k: round(v * 100) for k, v in _WEIGHTS.items()}
+
     available = {k: v for k, v in scores.items() if v["score"] is not None}
     if not available:
-        return {**scores, "composite": {"score": None, "action": "N/A"}}
+        return {**scores, "composite": {"score": None, "action": "N/A", "weights": weights_pct}}
 
     total_w   = sum(_WEIGHTS[k] for k in available)
     composite = round(sum(v["score"] * _WEIGHTS[k] / total_w for k, v in available.items()), 1)
     action    = next(label for threshold, label in _THRESHOLDS if composite >= threshold)
 
-    return {**scores, "composite": {"score": composite, "action": action}}
+    return {**scores, "composite": {"score": composite, "action": action, "weights": weights_pct}}

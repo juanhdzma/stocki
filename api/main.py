@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from api.routers import portfolio, refresh, lookup, watchlist, system
+from api.routers import refresh, lookup, watchlist, system
 from db.cache import init_db, engine
 from scheduler.worker import start_scheduler, stop_scheduler
 from core.fetchers.yahoo import init_auth
@@ -28,7 +28,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="StockDesk", lifespan=lifespan)
 
-app.include_router(portfolio.router, prefix="/api")
 app.include_router(refresh.router,   prefix="/api")
 app.include_router(lookup.router,    prefix="/api")
 app.include_router(watchlist.router, prefix="/api")

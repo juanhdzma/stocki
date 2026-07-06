@@ -4,7 +4,7 @@ Insider conviction score (-100 to +100) for a single ticker.
 from __future__ import annotations
 import re
 import bisect
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 # ── Role classification ───────────────────────────────────────────────────────
@@ -293,7 +293,7 @@ def compute_insider_score(
     Pass _already_normalized=True when the caller has already run _normalize() on the data.
     """
     txs = transactions_raw if _already_normalized else _normalize(transactions_raw)
-    cutoff = datetime.utcnow() - timedelta(days=days_back)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days_back)
     txs = [tx for tx in txs if tx.get("trade_date") and tx["trade_date"] >= cutoff]
     raw_count = len(txs)
     valid = _filter(txs, market_cap)
@@ -319,7 +319,7 @@ def compute_insider_score(
     raw_bull = _group_score(buys)
     raw_bear = _group_score(sells)
 
-    MAX_RAW = 150.0  # max teórico: rep_tx(100) + cluster(30) + persist(10) + boost(10)
+    MAX_RAW = 130.0  # max: rep_tx(100) + cluster(20) + persist(10) = 130
     bull_norm = min(100.0, (raw_bull / MAX_RAW) * 100)
     bear_norm = min(100.0, (raw_bear / MAX_RAW) * 100)
 

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .base import clamp
+from .base import clamp, finalize_score
 
 
 def score(snapshot: dict) -> dict:
@@ -74,12 +74,4 @@ def score(snapshot: dict) -> dict:
     else:
         sub["analyst_upside"] = None
 
-    available = {k: v for k, v in sub.items() if v is not None}
-    if not available:
-        return {"score": None, "sub_scores": sub}
-    total_max      = sum(max_pts[k] for k in available)
-    total_possible = sum(max_pts.values())
-    if total_max / total_possible < 0.30:
-        return {"score": None, "sub_scores": sub}
-    final     = round(clamp(sum(available.values()) / total_max * 100, 0, 100), 1)
-    return {"score": final, "sub_scores": sub}
+    return finalize_score(sub, max_pts)

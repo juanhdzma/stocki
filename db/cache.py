@@ -31,7 +31,7 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as session:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         for ticker in _WATCHLIST_SEED:
             stmt = pg_insert(Watchlist).values(
                 ticker=ticker, list_type="watchlist", added_at=now
@@ -52,7 +52,7 @@ async def write_fundamentals(session: AsyncSession, ticker: str, period: str, da
         ticker=ticker,
         period=period,
         data_json=json.dumps(data),
-        created_at=datetime.utcnow().isoformat(),
+        created_at=datetime.now(timezone.utc).isoformat(),
     ).on_conflict_do_nothing()
     await session.execute(stmt)
     await session.commit()
@@ -95,7 +95,7 @@ async def write_snapshot(session: AsyncSession, ticker: str, data: dict) -> None
     stmt = pg_insert(MarketSnapshot).values(
         ticker=ticker,
         data_json=json.dumps(data),
-        refreshed_at=datetime.utcnow().isoformat(),
+        refreshed_at=datetime.now(timezone.utc).isoformat(),
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["ticker"],
@@ -125,7 +125,8 @@ async def get_last_fetch(session: AsyncSession, ticker: str, data_type: str) -> 
     row = result.scalars().first()
     if not row:
         return None
-    return datetime.fromisoformat(row.fetched_at).replace(tzinfo=timezone.utc)
+    dt = datetime.fromisoformat(row.fetched_at)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 async def set_last_fetch(session: AsyncSession, ticker: str, data_type: str) -> None:

@@ -1,11 +1,15 @@
 from __future__ import annotations
 import logging
+import time
 
 import requests
 import yfinance
+from fastapi import APIRouter
 
 log = logging.getLogger(__name__)
 router_cache: dict = {}
+
+_YF_LATEST_TTL = 24 * 3600
 
 
 def _fetch_latest_yfinance() -> str | None:
@@ -18,17 +22,19 @@ def _fetch_latest_yfinance() -> str | None:
         return None
 
 
-from fastapi import APIRouter
-
 router = APIRouter()
 
 
 @router.get("/system/info")
 def system_info():
     installed = yfinance.__version__
-    if "yfinance_latest" not in router_cache:
-        router_cache["yfinance_latest"] = _fetch_latest_yfinance()
-    latest = router_cache.get("yfinance_latest")
+    cached = router_cache.get("yfinance_latest")
+    now = time.monotonic()
+    if cached is None or now - cached[1] > _YF_LATEST_TTL:
+        latest = _fetch_latest_yfinance()
+        router_cache["yfinance_latest"] = (latest, now)
+    else:
+        latest = cached[0]
     return {
         "yfinance_installed": installed,
         "yfinance_latest":    latest,
