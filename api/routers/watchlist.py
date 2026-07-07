@@ -11,7 +11,7 @@ import asyncio
 
 from db.cache import get_session, read_all_fundamentals, AsyncSessionLocal
 from db.models import Watchlist, MarketSnapshot
-from api.routers._payload import build_payload
+from api.routers._payload import build_payload, _TICKER_RE
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -33,6 +33,8 @@ async def get_lists(session: AsyncSession = Depends(get_session)):
 async def add_ticker(ticker: str, list_type: str = "watchlist",
                      session: AsyncSession = Depends(get_session)):
     ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker")
     if list_type not in ("watchlist", "portfolio"):
         raise HTTPException(status_code=400, detail="list_type must be watchlist or portfolio")
     stmt = pg_insert(Watchlist).values(
@@ -45,7 +47,10 @@ async def add_ticker(ticker: str, list_type: str = "watchlist",
 
 @router.delete("/lists/{ticker}")
 async def remove_ticker(ticker: str, session: AsyncSession = Depends(get_session)):
-    await session.execute(delete(Watchlist).where(Watchlist.ticker == ticker.upper()))
+    ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker")
+    await session.execute(delete(Watchlist).where(Watchlist.ticker == ticker))
     await session.commit()
     return {"ok": True}
 
@@ -54,6 +59,8 @@ async def remove_ticker(ticker: str, session: AsyncSession = Depends(get_session
 async def move_ticker(ticker: str, list_type: str,
                       session: AsyncSession = Depends(get_session)):
     ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker")
     if list_type not in ("watchlist", "portfolio"):
         raise HTTPException(status_code=400, detail="list_type must be watchlist or portfolio")
     await session.execute(

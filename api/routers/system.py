@@ -1,5 +1,7 @@
 from __future__ import annotations
+import asyncio
 import logging
+import threading
 import time
 
 import requests
@@ -8,6 +10,7 @@ from fastapi import APIRouter
 
 log = logging.getLogger(__name__)
 router_cache: dict = {}
+_cache_lock = threading.Lock()
 
 _YF_LATEST_TTL = 24 * 3600
 
@@ -26,15 +29,20 @@ router = APIRouter()
 
 
 @router.get("/system/info")
-def system_info():
+async def system_info():
     installed = yfinance.__version__
-    cached = router_cache.get("yfinance_latest")
     now = time.monotonic()
-    if cached is None or now - cached[1] > _YF_LATEST_TTL:
-        latest = _fetch_latest_yfinance()
+    with _cache_lock:
+        cached = router_cache.get("yfinance_latest")
+        if cached is not None and now - cached[1] <= _YF_LATEST_TTL:
+            return {
+                "yfinance_installed": installed,
+                "yfinance_latest":    cached[0],
+                "up_to_date":         cached[0] is None or installed == cached[0],
+            }
+    latest = await asyncio.to_thread(_fetch_latest_yfinance)
+    with _cache_lock:
         router_cache["yfinance_latest"] = (latest, now)
-    else:
-        latest = cached[0]
     return {
         "yfinance_installed": installed,
         "yfinance_latest":    latest,
