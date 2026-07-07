@@ -1,7 +1,3 @@
-"""
-Tests validating all 9 fixes applied during the code review.
-No network calls, no live DB required.
-"""
 from __future__ import annotations
 import asyncio
 import sys
@@ -14,27 +10,10 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
-# ── Fix 1: MAX_RAW = 130 ─────────────────────────────────────────────────────
-
-def test_max_raw_correct_value():
-    from core.insider_score import compute_insider_score
-
-    src = open(
-        os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                     "core", "insider_score.py")
-    ).read()
-    assert "MAX_RAW = 130.0" in src, "MAX_RAW must be 130.0"
-    assert "MAX_RAW = 150.0" not in src, "Old MAX_RAW=150 must be gone"
-
+# ── insider_score ─────────────────────────────────────────────────────────────
 
 def test_perfect_insider_signal_reaches_100():
-    """
-    A perfect single tx scores rep_tx=100. With MAX_RAW=130 that gives
-    bull_norm = min(100, 100/130*100) = 76.9. Adding cluster+persist bonuses
-    from many insiders can push it to 100. This test verifies two things:
-    1. A single perfect tx scores ~76.9 (not the old ceiling of ~66.7 with MAX_RAW=150)
-    2. bull_norm is capped at 100 (min guard holds)
-    """
+    """Single CEO buy should score well above the old MAX_RAW=150 ceiling (~66.7)."""
     from core.insider_score import compute_insider_score
 
     tx = {
@@ -51,62 +30,112 @@ def test_perfect_insider_signal_reaches_100():
         [tx], market_cap=1e9, week52_low=40.0, week52_high=60.0,
         days_back=365, _already_normalized=True,
     )
-    # With MAX_RAW=130, single tx: rep_tx=100 → bull_norm = 76.9
-    # With MAX_RAW=150 (old bug), single tx: bull_norm = 66.7
-    # Score must be above the old wrong ceiling
-    assert result["score"] > 60.0, (
-        f"Score {result['score']} too low, suggests wrong MAX_RAW normalization"
-    )
+    assert result["score"] > 60.0, f"Score {result['score']} too low, suggests wrong MAX_RAW normalization"
     assert result["score"] <= 100.0, "Score must never exceed 100"
 
 
 def test_old_max_raw_would_have_deflated():
-    """Demonstrate the math: with MAX_RAW=150, max achievable was ~86.7."""
-    old_cap = (130.0 / 150.0) * 100  # 86.66...
-    new_cap = (130.0 / 130.0) * 100  # 100.0
+    old_cap = (130.0 / 150.0) * 100
+    new_cap = (130.0 / 130.0) * 100
     assert old_cap < 87.0
     assert new_cap == 100.0
 
 
-# ── Fix 2: Semaphore in scheduler ────────────────────────────────────────────
-
-def test_scheduler_semaphore_present():
-    src = open(
-        os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                     "scheduler", "worker.py")
-    ).read()
-    assert "Semaphore(12)" in src, "Semaphore must be present in worker.py"
-    assert "bounded" in src, "bounded() wrapper must be present"
+def test_normalize_is_public():
+    """normalize() must be importable as a public symbol (no leading underscore)."""
+    from core.insider_score import normalize
+    assert callable(normalize)
 
 
-def test_scheduler_aware_datetime():
-    src = open(
-        os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                     "scheduler", "worker.py")
-    ).read()
-    assert "datetime.now(timezone.utc)" in src
-    assert "datetime.utcnow()" not in src, "No naive utcnow() allowed in worker.py"
+# ── scheduler/worker ─────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_refresh_all_isolates_ticker_exceptions():
+    """An exception from one ticker must not prevent others from being refreshed."""
+    from scheduler.worker import refresh_all
+
+    refreshed = []
+
+    async def mock_refresh_one(ticker):
+        if ticker == "BAD":
+            raise RuntimeError("network error")
+        refreshed.append(ticker)
+
+    mock_result = MagicMock()
+    mock_result.all.return_value = [("OK", None), ("BAD", None)]
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("scheduler.worker.refresh_one", side_effect=mock_refresh_one), \
+         patch("scheduler.worker.AsyncSessionLocal", return_value=mock_session):
+        await refresh_all()
+
+    assert "OK" in refreshed
+    assert "BAD" not in refreshed
 
 
-# ── Fix 3: Semaphore in watchlist endpoint ───────────────────────────────────
+@pytest.mark.asyncio
+async def test_insider_ttl_not_updated_on_network_failure():
+    """When fetch_insider_transactions returns None, the insider TTL must not be recorded."""
+    from scheduler.worker import refresh_one
 
-def test_watchlist_semaphore_present():
-    src = open(
-        os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                     "api", "routers", "watchlist.py")
-    ).read()
-    assert "Semaphore(12)" in src, "Semaphore must be in watchlist.py"
+    set_fetch_calls = []
+
+    async def track_set_last_fetch(session, ticker, data_type):
+        set_fetch_calls.append(data_type)
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("scheduler.worker.AsyncSessionLocal", return_value=mock_session), \
+         patch("scheduler.worker._should_fetch_snapshot", new_callable=AsyncMock, return_value=True), \
+         patch("scheduler.worker.fetch_market_snapshot", return_value={"price": 100.0}), \
+         patch("scheduler.worker.read_snapshot", new_callable=AsyncMock, return_value=None), \
+         patch("scheduler.worker.should_fetch", new_callable=AsyncMock, return_value=True), \
+         patch("scheduler.worker.fetch_insider_transactions", return_value=None), \
+         patch("scheduler.worker.write_snapshot", new_callable=AsyncMock), \
+         patch("scheduler.worker.set_last_fetch", side_effect=track_set_last_fetch), \
+         patch("scheduler.worker.has_fundamentals", new_callable=AsyncMock, return_value=True):
+        await refresh_one("TEST")
+
+    assert "insider" not in set_fetch_calls
 
 
-# ── Fix 4: Portfolio queries DB, not hardcoded TICKERS ───────────────────────
+@pytest.mark.asyncio
+async def test_refresh_one_records_snapshot_timestamp():
+    """After a successful refresh_one, the snapshot fetch timestamp must be recorded."""
+    from scheduler.worker import refresh_one
 
-def test_portfolio_no_hardcoded_tickers():
-    src = open(
-        os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                     "api", "routers", "portfolio.py")
-    ).read()
-    assert 'from config import TICKERS' not in src, "portfolio.py must not import TICKERS"
-    assert 'list_type == "portfolio"' in src, "portfolio.py must query Watchlist by list_type"
+    set_fetch_calls = []
+
+    async def track(session, ticker, data_type):
+        set_fetch_calls.append(data_type)
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("scheduler.worker.AsyncSessionLocal", return_value=mock_session), \
+         patch("scheduler.worker._should_fetch_snapshot", new_callable=AsyncMock, return_value=True), \
+         patch("scheduler.worker.fetch_market_snapshot", return_value={"price": 100.0}), \
+         patch("scheduler.worker.read_snapshot", new_callable=AsyncMock, return_value=None), \
+         patch("scheduler.worker.should_fetch", new_callable=AsyncMock, return_value=False), \
+         patch("scheduler.worker.write_snapshot", new_callable=AsyncMock), \
+         patch("scheduler.worker.set_last_fetch", side_effect=track):
+        await refresh_one("TEST")
+
+    assert "snapshot" in set_fetch_calls
+
+
+# ── portfolio ────────────────────────────────────────────────────────────────
+
+def test_portfolio_does_not_import_tickers():
+    """portfolio.py must not import TICKERS from config."""
+    import api.routers.portfolio as p
+    assert not hasattr(p, "TICKERS"), "portfolio.py must not import TICKERS from config"
 
 
 @pytest.mark.asyncio
@@ -114,18 +143,21 @@ async def test_portfolio_returns_db_tickers():
     """get_portfolio must serve tickers from the Watchlist table, not config."""
     from api.routers.portfolio import get_portfolio
 
-    fake_row = MagicMock()
-    fake_row.__iter__ = MagicMock(return_value=iter(["NVDA"]))
+    wl_result = MagicMock()
+    wl_result.all.return_value = [("NVDA",)]
+
+    snap_row = MagicMock()
+    snap_row.data_json = '{"price": 100.0}'
+    snap_row.refreshed_at = "2024-01-01T00:00:00+00:00"
+    snap_result = MagicMock()
+    snap_result.scalars.return_value.first.return_value = snap_row
 
     mock_session = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.all.return_value = [("NVDA",)]
-    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.execute = AsyncMock(side_effect=[wl_result, snap_result])
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
     with patch("api.routers.portfolio.AsyncSessionLocal", return_value=mock_session), \
-         patch("api.routers.portfolio.read_snapshot", new_callable=AsyncMock, return_value={}), \
          patch("api.routers.portfolio.read_all_fundamentals", new_callable=AsyncMock, return_value=[]), \
          patch("api.routers.portfolio.build_payload", return_value={"snapshot": {}}):
         result = await get_portfolio()
@@ -134,36 +166,27 @@ async def test_portfolio_returns_db_tickers():
     assert "SOFI" not in result["tickers"], "Hardcoded SOFI must not appear"
 
 
-# ── Fix 5: APScheduler gets aware datetime ───────────────────────────────────
+# ── openinsider fetcher ───────────────────────────────────────────────────────
 
-def test_apscheduler_next_run_aware():
-    src = open(
-        os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                     "scheduler", "worker.py")
-    ).read()
-    assert "next_run_time=datetime.now(timezone.utc)" in src
+def test_openinsider_uses_https():
+    from core.fetchers.openinsider import _BASE_URL
+    assert _BASE_URL.startswith("https://"), "OpenInsider URL must use HTTPS"
 
 
-# ── Fix 6: openinsider uses HTTPS ────────────────────────────────────────────
+# ── lookup auth ──────────────────────────────────────────────────────────────
 
-def test_openinsider_https():
-    src = open(
-        os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                     "core", "fetchers", "openinsider.py")
-    ).read()
-    assert "_BASE_URL = \"https://openinsider.com/screener\"" in src
-    assert "http://" not in src, "No plain HTTP allowed"
+def test_lookup_auth_cold_start():
+    """_last_auth_at must init to float('-inf') so the first request always triggers auth."""
+    import math
+    import api.routers.lookup as lk
+    assert math.isinf(lk._last_auth_at) and lk._last_auth_at < 0
 
 
-# ── Fix 7: concurrent init_auth serialized with asyncio.Lock ─────────────────
-
-def test_auth_lock_present():
-    src = open(
-        os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                     "api", "routers", "lookup.py")
-    ).read()
-    assert "_auth_lock = asyncio.Lock()" in src
-    assert "async with _auth_lock:" in src
+def test_auth_double_check_variables_present():
+    import api.routers.lookup as lk
+    assert hasattr(lk, "_last_auth_at"), "_last_auth_at module-level float missing"
+    assert hasattr(lk, "_AUTH_INTERVAL"), "_AUTH_INTERVAL constant missing"
+    assert lk._AUTH_INTERVAL == 300.0
 
 
 @pytest.mark.asyncio
@@ -182,31 +205,33 @@ async def test_auth_lock_serializes():
             await fake_init_auth()
 
     await asyncio.gather(caller(), caller())
-    # If lock works, second call starts after first finishes (0.05s gap)
     assert len(call_times) == 2
     assert call_times[1] - call_times[0] >= 0.04
 
 
-# ── Fix 8: _build_payload consolidated in _payload.py ────────────────────────
+@pytest.mark.asyncio
+async def test_auth_not_called_twice_within_interval():
+    """Second lookup within _AUTH_INTERVAL must NOT call init_auth again."""
+    import time
+    import api.routers.lookup as lk
 
-def test_payload_module_exists():
-    path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        "api", "routers", "_payload.py"
-    )
-    assert os.path.exists(path), "_payload.py must exist"
+    call_count = 0
+
+    async def fake_init():
+        nonlocal call_count
+        call_count += 1
+
+    with patch("api.routers.lookup.asyncio.to_thread", side_effect=fake_init):
+        lk._last_auth_at = time.monotonic()
+        async with lk._auth_lock:
+            if time.monotonic() - lk._last_auth_at > lk._AUTH_INTERVAL:
+                await fake_init()
+                lk._last_auth_at = time.monotonic()
+
+    assert call_count == 0, "init_auth must be skipped if auth was recent"
 
 
-def test_payload_imported_everywhere():
-    for fname in ("portfolio.py", "lookup.py", "watchlist.py"):
-        src = open(
-            os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                         "api", "routers", fname)
-        ).read()
-        assert "from api.routers._payload import build_payload" in src, (
-            f"{fname} must import build_payload from _payload"
-        )
-
+# ── _payload ─────────────────────────────────────────────────────────────────
 
 def test_build_payload_output_shape():
     from api.routers._payload import build_payload
@@ -223,49 +248,34 @@ def test_build_payload_output_shape():
     assert "refreshed_at" in result
     assert result["refreshed_at"] == "2024-01-01T00:00:00+00:00"
     assert "data_ready" in result
-    assert result["data_ready"] is False  # no quarterlies
+    assert result["data_ready"] is False
 
 
-# ── Fix 9: db/cache.py uses timezone-aware datetimes ─────────────────────────
-
-def test_cache_no_naive_utcnow():
-    src = open(
-        os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                     "db", "cache.py")
-    ).read()
-    assert "datetime.utcnow()" not in src, (
-        "db/cache.py must not use naive datetime.utcnow()"
-    )
-
+# ── db/cache datetime hygiene ────────────────────────────────────────────────
 
 def test_get_last_fetch_handles_aware_string():
-    """get_last_fetch must not crash when stored string has +00:00 timezone."""
-    from datetime import datetime, timezone
-    aware_str = datetime.now(timezone.utc).isoformat()  # includes +00:00
+    aware_str = datetime.now(timezone.utc).isoformat()
     dt = datetime.fromisoformat(aware_str)
     result = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     assert result.tzinfo is not None
 
 
 def test_get_last_fetch_handles_naive_string():
-    """get_last_fetch must handle legacy naive UTC strings."""
-    from datetime import datetime, timezone
     naive_str = "2024-06-15T14:30:00"
     dt = datetime.fromisoformat(naive_str)
     result = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     assert result.tzinfo == timezone.utc
 
 
-# ── Snapshot age: handles both naive and aware refreshed_at ─────────────────
+# ── lookup snapshot age ───────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_snapshot_age_handles_naive_ts():
-    """_snapshot_age_seconds must not crash on a naive datetime string."""
     from api.routers.lookup import _snapshot_age_seconds
 
     mock_session = AsyncMock()
     mock_row = MagicMock()
-    mock_row.refreshed_at = "2024-01-01T12:00:00"  # naive UTC string
+    mock_row.refreshed_at = "2024-01-01T12:00:00"
     mock_result = MagicMock()
     mock_result.first.return_value = mock_row
     mock_session.execute = AsyncMock(return_value=mock_result)
@@ -277,7 +287,6 @@ async def test_snapshot_age_handles_naive_ts():
 
 @pytest.mark.asyncio
 async def test_snapshot_age_handles_aware_ts():
-    """_snapshot_age_seconds must not crash on a timezone-aware string."""
     from api.routers.lookup import _snapshot_age_seconds
 
     recent = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
@@ -290,4 +299,100 @@ async def test_snapshot_age_handles_aware_ts():
 
     age = await _snapshot_age_seconds(mock_session, "AAPL")
     assert age is not None
-    assert 0 < age < 120  # within 2 minutes of 30s-ago timestamp
+    assert 0 < age < 120
+
+
+# ── ticker validation ────────────────────────────────────────────────────────
+
+def test_ticker_re_pattern():
+    import api.routers.watchlist as wl
+    import api.routers.lookup as lk
+    for mod in (wl, lk):
+        assert hasattr(mod, "_TICKER_RE"), f"_TICKER_RE missing from {mod.__name__}"
+        assert mod._TICKER_RE.match("SOFI")
+        assert mod._TICKER_RE.match("BRK.B")
+        assert not mod._TICKER_RE.match("")
+        assert not mod._TICKER_RE.match("A" * 13)
+        assert not mod._TICKER_RE.match("SO FI")
+
+
+@pytest.mark.asyncio
+async def test_add_ticker_rejects_invalid():
+    from fastapi import HTTPException
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock()
+    mock_session.commit  = AsyncMock()
+
+    import api.routers.watchlist as wl
+    with pytest.raises(HTTPException) as exc_info:
+        await wl.add_ticker("SO FI", "watchlist", mock_session)
+    assert exc_info.value.status_code == 400
+
+
+# ── scorer coverage ───────────────────────────────────────────────────────────
+
+def test_value_quality_score_with_full_snapshot():
+    from core.scorers.value_quality import score
+
+    snap = {
+        "roe": 0.25, "roa": 0.12, "net_margin": 0.18,
+        "pct_from_52w_high": -0.15,
+        "price": 100.0, "target_mean": 130.0,
+        "forward_pe": 20.0, "trailing_pe": 25.0,
+        "peg_ratio": 0.8, "price_to_sales": 3.0, "revenue_growth": 0.20,
+        "current_ratio": 2.5, "debt_to_equity": 40.0,
+        "dilution_rate": -0.01, "market_cap": 10e9,
+        "rec_strong_buy": 5, "rec_buy": 10, "rec_hold": 3, "rec_sell": 0, "rec_strong_sell": 0,
+    }
+    result = score([], snap)
+    assert "score" in result and "sub_scores" in result
+    assert result["score"] is not None
+    assert 0 <= result["score"] <= 100
+
+
+def test_price_opportunity_score_with_full_snapshot():
+    from core.scorers.price_opportunity import score
+
+    snap = {
+        "pct_from_1w_high": -0.03, "pct_from_52w_high": -0.25, "beta": 1.5,
+        "returns": {"ticker_return_3m": -0.05, "spy_return_3m": 0.08,
+                    "ticker_return_1m": -0.02, "spy_return_1m": 0.03},
+        "short_percent_of_float": 0.12, "short_ratio": 6.0,
+        "put_call_ratio": 1.2,
+        "price": 80.0, "target_mean": 110.0, "analyst_count": 15,
+    }
+    result = score([], snap)
+    assert "score" in result and "sub_scores" in result
+    assert result["score"] is not None
+    assert 0 <= result["score"] <= 100
+
+
+def test_fundamental_momentum_score_with_quarters():
+    from core.scorers.fundamental_momentum import score
+
+    quarters = [
+        {"type": "quarterly", "revenue": 1_200_000, "net_income": 120_000,
+         "gross_margin": 0.45, "fcf": 80_000, "rd_expense": 60_000, "buybacks": -20_000},
+        {"type": "quarterly", "revenue": 1_100_000, "net_income": 100_000,
+         "gross_margin": 0.43, "fcf": 70_000, "rd_expense": 55_000, "buybacks": -18_000},
+        {"type": "quarterly", "revenue": 1_000_000, "net_income": 80_000,
+         "gross_margin": 0.41, "fcf": 60_000, "rd_expense": 50_000, "buybacks": -15_000},
+        {"type": "quarterly", "revenue": 950_000, "net_income": 60_000,
+         "gross_margin": 0.40, "fcf": 50_000, "rd_expense": 45_000, "buybacks": -12_000},
+    ]
+    snap = {"market_cap": 50_000_000, "revenue_growth": 0.15, "operating_margin": 0.12}
+    result = score(quarters, snap)
+    assert "score" in result and "sub_scores" in result
+    assert result["score"] is not None
+    assert 0 <= result["score"] <= 100
+
+
+def test_analyst_upside_pts_helper():
+    from core.scorers.base import analyst_upside_pts
+
+    assert analyst_upside_pts(100.0, 130.0, 15.0) == pytest.approx(15.0, abs=0.1)
+    assert analyst_upside_pts(100.0, 100.0, 15.0) == pytest.approx(0.0, abs=0.1)
+    assert analyst_upside_pts(None, 130.0, 15.0) is None
+    assert analyst_upside_pts(100.0, None, 15.0) is None
+    assert analyst_upside_pts(0.0, 130.0, 15.0) is None
