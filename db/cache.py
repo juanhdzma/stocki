@@ -1,9 +1,11 @@
 from __future__ import annotations
 import json
+import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import AsyncGenerator
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import (
     AsyncSession, AsyncEngine, create_async_engine, async_sessionmaker,
@@ -12,32 +14,39 @@ from sqlalchemy.ext.asyncio import (
 from config import DATABASE_URL
 from db.models import Base, FundamentalsHistory, MarketSnapshot, FetchTimestamp, Watchlist
 
+logger = logging.getLogger(__name__)
+
 engine: AsyncEngine = create_async_engine(DATABASE_URL, pool_size=10, max_overflow=5)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
-_WATCHLIST_SEED = [
-    "AVGO", "PLTR", "NVDA", "NOW", "SOFI", "RKLB", "TSM", "MU", "GOOGL", "VRT",
-    "INTC", "AAOI", "ACN", "ADBE", "ADI", "AFRM", "AMAT", "AMD", "AME", "ARM",
-    "ASML", "AVAV", "AXTI", "BE", "CEG", "CGNX", "CIB", "CRM", "CRWD", "CRWV",
-    "EPAM", "ERII", "GEV", "GMED", "IONQ", "ISRG", "JBL", "KTOS", "LITE", "LLY",
-    "LMT", "MDT", "MELI", "META", "MNST", "MP", "MRVL", "MSFT", "NBIS", "NFLX",
-    "NNE", "NOVT", "NPCE", "NU", "OUST", "PRCT", "QBTS", "QCOM", "QNT", "SNDK",
-    "SOI.PA", "SPCX", "STM", "STX", "SYK", "TER", "TKR", "TSLA", "TTD", "USAR",
-    "VST", "WDC", "ZS", "MOG-A",
-]
+_TICKERS_FILE = Path(__file__).parent.parent / "data" / "tickers.txt"
+
+
+def _load_seed_tickers() -> list[str]:
+    if not _TICKERS_FILE.exists():
+        return []
+    raw = _TICKERS_FILE.read_text().strip()
+    return [t for t in raw.split() if t]
 
 
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as session:
-        now = datetime.now(timezone.utc).isoformat()
-        for ticker in _WATCHLIST_SEED:
-            stmt = pg_insert(Watchlist).values(
-                ticker=ticker, list_type="watchlist", added_at=now
-            ).on_conflict_do_nothing()
-            await session.execute(stmt)
-        await session.commit()
+        count = await session.scalar(select(func.count()).select_from(Watchlist))
+        if count == 0:
+            seed = _load_seed_tickers()
+            if seed:
+                now = datetime.now(timezone.utc).isoformat()
+                for ticker in seed:
+                    stmt = pg_insert(Watchlist).values(
+                        ticker=ticker, list_type="watchlist", added_at=now
+                    ).on_conflict_do_nothing()
+                    await session.execute(stmt)
+                await session.commit()
+                logger.info("Seeded watchlist with %d tickers from %s", len(seed), _TICKERS_FILE)
+            else:
+                logger.info("No seed tickers found (%s missing or empty)", _TICKERS_FILE)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -56,17 +65,6 @@ async def write_fundamentals(session: AsyncSession, ticker: str, period: str, da
     ).on_conflict_do_nothing()
     await session.execute(stmt)
     await session.commit()
-
-
-async def read_fundamentals(session: AsyncSession, ticker: str, period: str) -> dict | None:
-    result = await session.execute(
-        select(FundamentalsHistory).where(
-            FundamentalsHistory.ticker == ticker,
-            FundamentalsHistory.period == period,
-        )
-    )
-    row = result.scalars().first()
-    return json.loads(row.data_json) if row else None
 
 
 async def has_fundamentals(session: AsyncSession, ticker: str, period: str) -> bool:
