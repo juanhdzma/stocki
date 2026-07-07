@@ -71,7 +71,7 @@ def _parse_usd(v) -> float | None:
 _EXCLUDE = {"A", "G", "W", "F", "D", "C"}
 
 
-def _normalize(raw: list[dict]) -> list[dict]:
+def normalize(raw: list[dict]) -> list[dict]:
     out = []
     for t in raw:
         out.append({
@@ -290,9 +290,10 @@ def compute_insider_score(
         price / Price
         trade_date / Trade Date
         filing_date / Filing Date
-    Pass _already_normalized=True when the caller has already run _normalize() on the data.
+    Pass _already_normalized=True when the caller has already run normalize() on the data.
     """
-    txs = transactions_raw if _already_normalized else _normalize(transactions_raw)
+    txs = transactions_raw if _already_normalized else normalize(transactions_raw)
+    # .replace(tzinfo=None): normalize() always produces naive trade_date; cutoff must match
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days_back)
     txs = [tx for tx in txs if tx.get("trade_date") and tx["trade_date"] >= cutoff]
     raw_count = len(txs)

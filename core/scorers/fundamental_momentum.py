@@ -26,7 +26,6 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
         "gm_expansion":   15.0,
         "fcf_trajectory": 15.0,
         "rd_intensity":   10.0,
-        "buyback_signal": 10.0,
         "rule_of_40":      5.0,
     }
 
@@ -88,16 +87,7 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     else:
         sub["rd_intensity"] = None
 
-    # 6. Buyback signal (0-10) — cash returned as % of market cap
-    mc = snapshot.get("market_cap") or 0
-    buyback_vals = [q["buybacks"] for q in quarters[:4] if q.get("buybacks") is not None]
-    if buyback_vals and mc > 0:
-        total = sum(buyback_vals)
-        sub["buyback_signal"] = round(clamp(abs(total) / mc / 0.03 * 10, 0, 10), 1) if total < 0 else 0.0
-    else:
-        sub["buyback_signal"] = None
-
-    # 7. Rule of 40 (0-5)
+    # 6. Rule of 40 (0-5)
     rev_g = snapshot.get("revenue_growth")
     op_m  = snapshot.get("operating_margin")
     if rev_g is not None and op_m is not None:

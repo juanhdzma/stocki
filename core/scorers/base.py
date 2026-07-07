@@ -5,22 +5,10 @@ def clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
-def aggregate(sub_scores: dict[str, float | None], weights: dict[str, float]) -> dict:
-    available = {k: v for k, v in sub_scores.items() if v is not None}
-    if not available:
-        return {"score": None, "sub_scores": sub_scores}
-    total_w = sum(weights[k] for k in available)
-    if total_w == 0:
-        return {"score": None, "sub_scores": sub_scores}
-    score = sum(v * weights[k] / total_w for k, v in available.items())
-    return {"score": round(score, 2), "sub_scores": sub_scores}
-
-
-def latest_annual(funds: list[dict]) -> dict | None:
-    for f in funds:
-        if f.get("type") == "annual":
-            return f
-    return None
+def analyst_upside_pts(price: float | None, target_mean: float | None, max_pts: float) -> float | None:
+    if not (price and target_mean and target_mean > 0 and price > 0):
+        return None
+    return clamp((target_mean - price) / price / 0.30, 0, 1) * max_pts
 
 
 def all_annual(funds: list[dict]) -> list[dict]:
@@ -43,7 +31,7 @@ def finalize_score(sub: dict[str, float | None], max_pts: dict[str, float], min_
         return {"score": None, "sub_scores": sub}
     total_max      = sum(max_pts[k] for k in available)
     total_possible = sum(max_pts.values())
-    if total_max / total_possible < min_coverage:
+    if not total_possible or total_max / total_possible < min_coverage:
         return {"score": None, "sub_scores": sub}
     final = round(clamp(sum(available.values()) / total_max * 100, 0, 100), 1)
     return {"score": final, "sub_scores": sub}

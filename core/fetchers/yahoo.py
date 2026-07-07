@@ -15,6 +15,12 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 if not hasattr(requests.exceptions, "DNSError"):
     requests.exceptions.DNSError = requests.exceptions.ConnectionError
 
+logging.getLogger("yfinance").addFilter(
+    type("_NoCurlWarning", (logging.Filter,), {
+        "filter": lambda self, r: "curl_cffi" not in r.getMessage()
+    })()
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -133,17 +139,33 @@ def _period_data(inc: pd.DataFrame | None, bs: pd.DataFrame | None,
     }
 
 
+# ── Bulk price download ───────────────────────────────────────────────────────
+
+def batch_download_history(tickers: list[str]) -> pd.DataFrame:
+    """Single bulk download: all tickers + SPY, 2y daily. Returns MultiIndex DataFrame."""
+    all_syms = list(dict.fromkeys([t.upper() for t in tickers] + ["SPY"]))
+    return yf.download(all_syms, period="2y", interval="1d", auto_adjust=True, progress=False)
+
+
 # ── 1W high ───────────────────────────────────────────────────────────────────
 
-def _compute_1w_pct(ticker: str, price: float | None) -> float | None:
+def _compute_1w_pct(ticker: str, price: float | None, hist: pd.DataFrame | None = None) -> float | None:
     try:
-        hist = yf.download(ticker, period="5d", interval="1d",
-                           auto_adjust=True, progress=False)
-        if hist.empty or not price:
+        if hist is not None and not hist.empty:
+            highs_all = hist["High"]
+            highs = highs_all[ticker] if ticker in highs_all.columns else pd.Series(dtype=float)
+            highs = highs.dropna().tail(5)
+        else:
+            raw = yf.download(ticker, period="5d", interval="1d", auto_adjust=True, progress=False)
+            if raw.empty:
+                return None
+            highs = raw["High"]
+            if isinstance(highs, pd.DataFrame):
+                highs = highs[ticker]
+            highs = highs.dropna()
+
+        if highs.empty or not price:
             return None
-        highs = hist["High"]
-        if isinstance(highs, pd.DataFrame):
-            highs = highs[ticker]
         h1w = float(highs.max())
         return (price - h1w) / h1w
     except Exception:
@@ -152,15 +174,15 @@ def _compute_1w_pct(ticker: str, price: float | None) -> float | None:
 
 # ── Price returns vs SPY ──────────────────────────────────────────────────────
 
-def _compute_returns(ticker: str) -> dict[str, float | None]:
+def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str, float | None]:
     try:
-        hist = yf.download(
-            [ticker, "SPY"], period="2y", interval="1d",
-            auto_adjust=True, progress=False,
-        )
-        closes = hist["Close"]
-        if isinstance(closes, pd.Series):
-            closes = closes.to_frame(name=ticker)
+        if hist is not None and not hist.empty:
+            closes = hist["Close"]
+        else:
+            raw = yf.download([ticker, "SPY"], period="2y", interval="1d", auto_adjust=True, progress=False)
+            closes = raw["Close"]
+            if isinstance(closes, pd.Series):
+                closes = closes.to_frame(name=ticker)
 
         result: dict[str, float | None] = {}
         periods = {"1m": 21, "3m": 63, "6m": 126, "12m": 252}
@@ -169,7 +191,7 @@ def _compute_returns(ticker: str) -> dict[str, float | None]:
             for sym in [ticker, "SPY"]:
                 key = f"ticker_return_{label}" if sym == ticker else f"spy_return_{label}"
                 try:
-                    series = closes[sym].dropna()
+                    series = closes[sym].dropna() if sym in closes.columns else pd.Series(dtype=float)
                     if len(series) > days:
                         r = (series.iloc[-1] - series.iloc[-days]) / series.iloc[-days]
                         result[key] = float(r)
@@ -224,7 +246,7 @@ def _compute_put_call(t: yf.Ticker, max_expirations: int = 8) -> float | None:  
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def fetch_market_snapshot(ticker: str) -> dict:
+def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict:
     t = yf.Ticker(ticker)
     info = t.info or {}
 
@@ -252,14 +274,15 @@ def fetch_market_snapshot(ticker: str) -> dict:
     except Exception:
         pass
 
-    returns = _compute_returns(ticker)
-    pct_from_1w_high = _compute_1w_pct(ticker, price)
+    returns = _compute_returns(ticker, hist)
+    pct_from_1w_high = _compute_1w_pct(ticker, price, hist)
 
     week52_high = _f(info.get("fiftyTwoWeekHigh"))
     pct_from_52w_high = (price - week52_high) / week52_high if (price and week52_high) else None
 
     return {
         # Price & market
+        "name":                       info.get("longName") or info.get("shortName"),
         "price":                      price,
         "market_cap":                 market_cap,
         "enterprise_value":           _f(info.get("enterpriseValue")),

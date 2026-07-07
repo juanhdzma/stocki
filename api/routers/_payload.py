@@ -1,8 +1,11 @@
 from __future__ import annotations
 import logging
+import re
 from datetime import date
 
 log = logging.getLogger(__name__)
+
+_TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,12}$")
 
 
 def build_payload(
@@ -19,7 +22,7 @@ def build_payload(
     snap_data   = {k: v for k, v in snap.items() if k not in ("returns", "insider_transactions")}
     market_cap  = snap.get("market_cap")
     recent_fcf  = next((f.get("fcf") for f in annuals if f.get("fcf") is not None), None)
-    snap_data["fcf_yield"] = (recent_fcf / market_cap) if (recent_fcf and market_cap) else None
+    snap_data["fcf_yield"] = (recent_fcf / market_cap) if (recent_fcf is not None and market_cap) else None
     try:
         scores = compute_all(funds, snap)
     except Exception as exc:

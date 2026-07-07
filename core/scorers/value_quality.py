@@ -1,12 +1,11 @@
 from __future__ import annotations
-from .base import clamp, ttm, latest_quarters, finalize_score
+from .base import clamp, ttm, latest_quarters, finalize_score, analyst_upside_pts
 
 
 def score(fundamentals: list[dict], snapshot: dict) -> dict:
     sub: dict[str, float | None] = {}
     max_pts: dict[str, float] = {
         "profitability":      20.0,
-        "price_discount":     20.0,
         "valuation":          20.0,
         "balance_sheet":      20.0,
         "capital_discipline": 10.0,
@@ -29,18 +28,7 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
         cnt += 1
     sub["profitability"] = round(clamp(pts / (8 + 6 + 6) * 20, 0, 20), 1) if cnt else None
 
-    # 2. Price discount — how far from 52W high + analyst upside (0-20)
-    pct_52h    = snapshot.get("pct_from_52w_high")
-    price      = snapshot.get("price")
-    target_mean = snapshot.get("target_mean")
-    pts = 0.0
-    if pct_52h is not None:
-        pts += clamp(abs(pct_52h) / 0.30, 0, 1) * 10
-    if price and target_mean and target_mean > 0 and price > 0:
-        pts += clamp((target_mean - price) / price / 0.30, 0, 1) * 10
-    sub["price_discount"] = round(clamp(pts, 0, 20), 1) if (pct_52h is not None or (price and target_mean)) else None
-
-    # 3. Valuation reasonableness (0-20) — forward vs trailing PE, PEG, growth-adj P/S
+    # 2. Valuation reasonableness (0-20) — forward vs trailing PE, PEG, growth-adj P/S
     fwd_pe = snapshot.get("forward_pe")
     trl_pe = snapshot.get("trailing_pe")
     peg    = snapshot.get("peg_ratio")
@@ -101,7 +89,7 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     total = sb + b + h + s + ss
     if total > 0:
         net_bull     = (sb + b - s - ss) / total
-        strong_bonus = (sb + ss) / total * 0.2
+        strong_bonus = sb / total * 0.2
         sub["analyst_conviction"] = round(clamp((net_bull + 1) / 2 * 10 + strong_bonus, 0, 10), 1)
     else:
         sub["analyst_conviction"] = None

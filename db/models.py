@@ -24,18 +24,11 @@ class MarketSnapshot(Base):
     refreshed_at: Mapped[str] = mapped_column(String(32))
 
 
-class ScoresCache(Base):
-    __tablename__ = "scores_cache"
-    ticker: Mapped[str] = mapped_column(String(20), primary_key=True)
-    scores_json: Mapped[str] = mapped_column(Text)
-    computed_at: Mapped[str] = mapped_column(String(32))
-
-
 class Watchlist(Base):
     __tablename__ = "watchlist"
     ticker: Mapped[str] = mapped_column(String(20), primary_key=True)
     list_type: Mapped[str] = mapped_column(String(20), server_default="watchlist")
-    added_at: Mapped[str] = mapped_column(String(32), server_default="")
+    added_at: Mapped[str] = mapped_column(String(32), server_default="1970-01-01T00:00:00+00:00")
 
 
 class FetchTimestamp(Base):
