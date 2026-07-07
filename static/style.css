@@ -96,7 +96,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 32px;
-  max-width: 1100px;
+  max-width: 1400px;
   margin: 0 auto;
 }
 
@@ -375,7 +375,7 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px 18px;
-  width: 492px;
+  min-width: 320px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
   pointer-events: none;
 }
@@ -416,21 +416,21 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 }
 
 .tt-legend-rev {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
   color: #58a6ff;
 }
 
 .tt-legend-ni {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
   color: var(--green);
 }
 
 .tt-chart-lbl {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -438,10 +438,10 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   margin-bottom: 3px;
 }
 
-.tt-chart { line-height: 0; }
+.tt-chart { line-height: 0; display: block; overflow: visible; }
 
 .tt-section-lbl {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -461,7 +461,7 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 .tt-metric { display: flex; flex-direction: column; gap: 3px; }
 
 .tt-ml {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -469,7 +469,7 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 }
 
 .tt-mv {
-  font-size: 13px;
+  font-size: 16px;
   color: var(--text);
   font-weight: 600;
 }
@@ -478,12 +478,18 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--text);
   padding-top: 9px;
   border-top: 1px solid var(--border);
   margin-top: 9px;
   flex-wrap: wrap;
+}
+
+.tt-analyst {
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  margin-top: 9px;
 }
 
 .tt-iscore { font-weight: 700; }
@@ -499,6 +505,7 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 4px 0;
 }
 
 .tt-sub-lbl {
@@ -529,6 +536,50 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   text-align: right;
   flex-shrink: 0;
 }
+
+/* ── Ticker company sub-line ─────────────────────────────────── */
+.ticker-company {
+  font-size: 10px;
+  color: var(--subtext);
+  font-weight: 400;
+  letter-spacing: 0;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+/* ── Sector cell ─────────────────────────────────────────────── */
+.td-sector {
+  font-size: 11px;
+  color: var(--subtext);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+/* ── Status lights ───────────────────────────────────────────── */
+.status-lights {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.sl {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.sl-gray   { background: var(--null); }
+.sl-yellow { background: var(--yellow); box-shadow: 0 0 4px rgba(210,153,34,0.6); }
+.sl-green  { background: var(--green); }
+.sl-red    { background: var(--red); }
 
 /* ── Incomplete data warning badge ───────────────────────────── */
 .warn-badge {

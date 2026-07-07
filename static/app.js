@@ -3,6 +3,7 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 let watchlist = [];
 let watchlistData = {};
+let tickerStatus = {};
 let sortCol = "composite";
 let sortDir = -1;
 
@@ -79,15 +80,20 @@ function fmtShort(v) {
   return n.toFixed(0);
 }
 
-function miniGroupedChart(revVals, niVals, labels, width, height) {
+function miniGroupedChart(revVals, niVals, labels, width) {
   const n = labels.length;
   if (!n) return "";
   const allVals = [...revVals, ...niVals].map(v => (v === null || v === undefined) ? 0 : Number(v));
-  const maxAbs  = Math.max(...allVals.map(v => Math.abs(v)), 1);
+  const maxPos  = Math.max(...allVals.filter(v => v >= 0), 0);
+  const maxNeg  = Math.max(...allVals.filter(v => v < 0).map(v => Math.abs(v)), 0);
+  const maxAbs  = Math.max(maxPos, maxNeg, 1);
 
-  const padH = 2, padTop = 14, padBot = 14;
-  const innerH  = height - padTop - padBot;
-  const baseline = padTop + innerH;
+  const padH = 2, padLabel = 12, padVal = 14;
+  const barAreaPos = maxPos > 0 ? 60 : 0;
+  const barAreaNeg = maxNeg > 0 ? 60 : 0;
+  const baseline   = padVal + barAreaPos;
+  const height     = padVal + barAreaPos + barAreaNeg + padLabel;
+
   const groupGap = 4, barGap = 1;
   const groupW   = Math.max((width - 2 * padH - groupGap * (n - 1)) / n, 4);
   const bw       = Math.max((groupW - barGap) / 2, 1);
@@ -100,21 +106,22 @@ function miniGroupedChart(revVals, niVals, labels, width, height) {
 
     const barSvg = (val, xOff, color) => {
       if (val === null) return "";
-      const bh = Math.max((Math.abs(val) / maxAbs) * innerH, 1);
-      const x  = gx + xOff;
-      const y  = val >= 0 ? baseline - bh : baseline;
-      const c  = val >= 0 ? color : "#f85149";
-      const valY = val >= 0 ? (y - 2).toFixed(1) : (y + bh + 8).toFixed(1);
+      const area = val >= 0 ? barAreaPos : barAreaNeg;
+      const bh   = Math.max((Math.abs(val) / maxAbs) * area, 1);
+      const x    = gx + xOff;
+      const y    = val >= 0 ? baseline - bh : baseline;
+      const c    = val >= 0 ? color : "#f85149";
+      const valY = val >= 0 ? (y - 3).toFixed(1) : (y + bh + 10).toFixed(1);
       return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${c}" rx="1"/>
-<text x="${(x + bw / 2).toFixed(1)}" y="${valY}" text-anchor="middle" fill="${c}" font-size="6" font-family="monospace">${fmtShort(val)}</text>`;
+<text x="${(x + bw / 2).toFixed(1)}" y="${valY}" text-anchor="middle" fill="${c}" font-size="9" font-family="monospace">${fmtShort(val)}</text>`;
     };
 
     return `${barSvg(rv,  0,        "#58a6ff")}
 ${barSvg(niv, bw + barGap, "#3fb950")}
-<text x="${lblX}" y="${height - 1}" text-anchor="middle" fill="#8b949e" font-size="7" font-family="monospace">${shortPeriod(lbl)}</text>`;
+<text x="${lblX}" y="${height - 2}" text-anchor="middle" fill="#8b949e" font-size="9" font-family="monospace">${shortPeriod(lbl)}</text>`;
   }).join("\n");
 
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+  return `<svg width="${width}" height="${height}" style="display:block;height:${height}px;margin-bottom:16px" xmlns="http://www.w3.org/2000/svg">
 <line x1="${padH}" y1="${baseline}" x2="${width - padH}" y2="${baseline}" stroke="#30363d" stroke-width="0.5"/>
 ${elements}</svg>`;
 }
@@ -127,26 +134,50 @@ function priceTargetBar(price, low, mean, high, width, height) {
   const range = maxV - minV;
   if (range <= 0) return "";
 
-  const pad = 24;
+  const pad = 44;
   const innerW = width - 2 * pad;
   const sc = v => pad + ((v - minV) / range) * innerW;
-  const midY = 18;
+  const midY = 20;
   const fmt = v => `$${Number(v).toFixed(0)}`;
 
   const lX = sc(low).toFixed(1), mX = sc(mean).toFixed(1),
         hX = sc(high).toFixed(1), pX = sc(price).toFixed(1);
 
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+  return `<svg width="${width}" height="${height}" overflow="visible" style="display:block;height:${height}px;margin-bottom:12px" xmlns="http://www.w3.org/2000/svg">
 <rect x="${lX}" y="${(midY - 3)}" width="${(sc(high) - sc(low)).toFixed(1)}" height="6" fill="#21262d" rx="3"/>
 <line x1="${lX}" y1="${midY - 6}" x2="${lX}" y2="${midY + 6}" stroke="#484f58" stroke-width="1.5"/>
 <line x1="${hX}" y1="${midY - 6}" x2="${hX}" y2="${midY + 6}" stroke="#484f58" stroke-width="1.5"/>
 <line x1="${mX}" y1="${midY - 8}" x2="${mX}" y2="${midY + 8}" stroke="#d29922" stroke-width="2"/>
 <circle cx="${pX}" cy="${midY}" r="5" fill="#58a6ff"/>
-<text x="${pX}" y="${midY - 11}" text-anchor="middle" fill="#58a6ff" font-size="8" font-family="monospace" font-weight="600">${fmt(price)}</text>
-<text x="${lX}" y="${height - 1}" text-anchor="middle" fill="#8b949e" font-size="7" font-family="monospace">${fmt(low)}</text>
-<text x="${mX}" y="${height - 1}" text-anchor="middle" fill="#d29922" font-size="7" font-family="monospace">${fmt(mean)}</text>
-<text x="${hX}" y="${height - 1}" text-anchor="middle" fill="#8b949e" font-size="7" font-family="monospace">${fmt(high)}</text>
+<text x="${pX}" y="${midY - 14}" text-anchor="middle" fill="#58a6ff" font-size="10" font-family="monospace" font-weight="600">${fmt(price)}</text>
+<text x="${lX}" y="${height - 1}" text-anchor="start" fill="#8b949e" font-size="10" font-family="monospace">${fmt(low)}</text>
+<text x="${mX}" y="${height - 1}" text-anchor="middle" fill="#d29922" font-size="10" font-family="monospace">${fmt(mean)}</text>
+<text x="${hX}" y="${height - 1}" text-anchor="end" fill="#8b949e" font-size="10" font-family="monospace">${fmt(high)}</text>
 </svg>`;
+}
+
+function analystBar(sb, b, h, s, ss, width) {
+  const total = (sb||0) + (b||0) + (h||0) + (s||0) + (ss||0);
+  if (total === 0) return "";
+  const barH = 20, labelH = 13, height = barH + labelH + 2;
+  const segments = [
+    { n: sb||0, color: "#3fb950", label: "Strong Buy" },
+    { n: b||0,  color: "#7ee787", label: "Buy"        },
+    { n: h||0,  color: "#8b949e", label: "Hold"       },
+    { n: s||0,  color: "#f0883e", label: "Sell"       },
+    { n: ss||0, color: "#f85149", label: "Strong Sell"},
+  ].filter(seg => seg.n > 0);
+  let x = 0;
+  const parts = segments.map(seg => {
+    const w = (seg.n / total) * width;
+    const cx = (x + w / 2).toFixed(1);
+    const out = `<rect x="${x.toFixed(1)}" y="0" width="${w.toFixed(1)}" height="${barH}" fill="${seg.color}" rx="2"/>
+${w >= 18 ? `<text x="${cx}" y="${barH - 6}" text-anchor="middle" fill="#0d1117" font-size="10" font-family="monospace" font-weight="700">${seg.n}</text>` : ""}
+${w >= 30 ? `<text x="${cx}" y="${barH + labelH}" text-anchor="middle" fill="${seg.color}" font-size="9" font-family="monospace">${seg.label}</text>` : `<text x="${cx}" y="${barH + labelH}" text-anchor="middle" fill="${seg.color}" font-size="9" font-family="monospace">${seg.n}</text>`}`;
+    x += w;
+    return out;
+  });
+  return `<svg width="${width}" height="${height}" overflow="visible" style="display:block;height:${height}px" xmlns="http://www.w3.org/2000/svg">${parts.join("")}</svg>`;
 }
 
 // ── Hover Tooltip ─────────────────────────────────────────────────────────────
@@ -170,13 +201,13 @@ function buildTooltip(ticker, d) {
   const actionStr = comp.action || "NA";
   const actionCls = "action-" + actionStr;
 
-  const CW = 440, CH = 84;
+  const CW = 440;
   const annualChart  = miniGroupedChart(
-    annuals.map(f => f.revenue),  annuals.map(f => f.net_income),  annuals.map(f => f.period),  CW, CH);
+    annuals.map(f => f.revenue),  annuals.map(f => f.net_income),  annuals.map(f => f.period),  CW);
   const quarterChart = miniGroupedChart(
-    quarters.map(f => f.revenue), quarters.map(f => f.net_income), quarters.map(f => f.period), CW, CH);
+    quarters.map(f => f.revenue), quarters.map(f => f.net_income), quarters.map(f => f.period), CW);
 
-  const ptBar = priceTargetBar(price, snap.target_low, snap.target_mean, snap.target_high, 440, 52);
+  const ptBar = priceTargetBar(price, snap.target_low, snap.target_mean, snap.target_high, 440, 64);
 
   const today = new Date();
   const ago90 = new Date(today); ago90.setDate(today.getDate() - 90);
@@ -213,28 +244,23 @@ function buildTooltip(ticker, d) {
 </div>
 ${ptBar ? `<div class="tt-section-lbl">Analyst Targets</div><div class="tt-chart">${ptBar}</div>` : ""}
 <div class="tt-metrics">
-  <div class="tt-metric"><span class="tt-ml">Fwd P/E</span><span class="tt-mv">${dec(snap.forward_pe)}</span></div>
-  <div class="tt-metric"><span class="tt-ml">Gross M.</span><span class="tt-mv">${pct(snap.gross_margin)}</span></div>
-  <div class="tt-metric"><span class="tt-ml">Op. M.</span><span class="tt-mv">${pct(snap.operating_margin)}</span></div>
-  <div class="tt-metric"><span class="tt-ml">Insider %</span><span class="tt-mv">${pct(snap.held_pct_insiders)}</span></div>
+  <div class="tt-metric"><span class="tt-ml">52W Low</span><span class="tt-mv">${p(snap.week52_low)}</span></div>
+  <div class="tt-metric"><span class="tt-ml">52W High</span><span class="tt-mv">${p(snap.week52_high)}</span></div>
+  <div class="tt-metric"><span class="tt-ml">vs 52W Hi</span><span class="tt-mv ${pct52hCls}">${pct(snap.pct_from_52w_high)}</span></div>
+  <div class="tt-metric"><span class="tt-ml">vs 1W Hi</span><span class="tt-mv ${snap.pct_from_1w_high != null ? (snap.pct_from_1w_high > -0.02 ? "s-yellow" : snap.pct_from_1w_high > -0.05 ? "s-null" : "s-green") : ""}">${pct(snap.pct_from_1w_high)}</span></div>
 </div>
-<div class="tt-footer">
-  <span class="tt-ml">Insiders 3M</span>
-  <span class="s-green">${buys3m}B</span>
-  <span class="subtext">/</span>
-  <span class="${sells3m > 0 ? "s-red" : "s-null"}">${sells3m}S</span>
-  ${icScore != null ? `<span class="tt-iscore ${icScore >= 0 ? "s-green" : "s-red"}">&nbsp;${icScore > 0 ? "+" : ""}${icScore.toFixed(0)}</span>` : ""}
-  <span class="tt-ml" style="margin-left:12px">Short Float</span>
-  <span>${pct(snap.short_percent_of_float)}</span>
+<div class="tt-analyst">
+  <span class="tt-ml">${snap.analyst_count != null ? snap.analyst_count + " analysts" : "—"}</span>
+  <div style="margin-top:6px">${analystBar(snap.rec_strong_buy, snap.rec_buy, snap.rec_hold, snap.rec_sell, snap.rec_strong_sell, 440)}</div>
 </div>`;
 }
 
 function showTooltip(event, ticker) {
   const el = document.getElementById("tooltip");
-  el.style.width = "492px";
+  el.style.width = "";
   el.innerHTML = buildTooltip(ticker, watchlistData[ticker]);
-  positionTooltip(event, el);
   el.style.display = "block";
+  positionTooltip(event, el);
 }
 
 function hideTooltip() {
@@ -243,34 +269,29 @@ function hideTooltip() {
 }
 
 function positionTooltip(event, el) {
-  const TW = parseInt(el.style.width) || 492;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  const TW = el.offsetWidth  || 492;
+  const TH = el.offsetHeight || 400;
   let left = event.clientX + 18;
   let top  = event.clientY - 30;
   if (left + TW > vw - 8) left = event.clientX - TW - 18;
   if (top < 60) top = 60;
-  if (top + 640 > vh - 8) top = Math.max(60, vh - 648);
+  if (top + TH > vh - 8) top = Math.max(60, vh - TH - 8);
   el.style.left = left + "px";
   el.style.top  = top + "px";
 }
 
 // ── Score detail tooltip ──────────────────────────────────────────────────────
 function subScoreBar(label, val, max) {
-  if (val === null || val === undefined) {
-    return `<div class="tt-sub-row">
-      <span class="tt-sub-lbl">${label}</span>
-      <div class="tt-sub-bar-wrap"></div>
-      <span class="tt-sub-val s-null">—</span>
-    </div>`;
-  }
-  const pct = Math.min(100, (val / max) * 100);
+  const v = (val === null || val === undefined) ? 0 : val;
+  const pct = Math.min(100, (v / max) * 100);
   const barColor = pct >= 70 ? "var(--green)" : pct >= 40 ? "var(--yellow)" : "var(--red)";
   const numCls   = pct >= 70 ? "s-green"      : pct >= 40 ? "s-yellow"      : "s-red";
   return `<div class="tt-sub-row">
     <span class="tt-sub-lbl">${label}</span>
     <div class="tt-sub-bar-wrap"><div class="tt-sub-bar" style="width:${pct.toFixed(0)}%;background:${barColor}"></div></div>
-    <span class="tt-sub-val ${numCls}">${val.toFixed(1)}<span class="subtext">/${max}</span></span>
+    <span class="tt-sub-val ${numCls}">${v.toFixed(1)}<span class="subtext">/${max}</span></span>
   </div>`;
 }
 
@@ -311,7 +332,6 @@ function buildScoreTooltip(ticker, col) {
         subScoreBar("GM Expansion",   sub.gm_expansion,   15),
         subScoreBar("FCF Trajectory", sub.fcf_trajectory, 15),
         subScoreBar("R&D Intensity",  sub.rd_intensity,   10),
-        subScoreBar("Buybacks",       sub.buyback_signal, 10),
         subScoreBar("Rule of 40",     sub.rule_of_40,      5),
       ].join("");
       break;
@@ -322,7 +342,6 @@ function buildScoreTooltip(ticker, col) {
       const sub = category.sub_scores || {};
       rows = [
         subScoreBar("Profitability",      sub.profitability,      20),
-        subScoreBar("Price Discount",     sub.price_discount,     20),
         subScoreBar("Valuation",          sub.valuation,          20),
         subScoreBar("Balance Sheet",      sub.balance_sheet,      20),
         subScoreBar("Capital Discipline", sub.capital_discipline, 10),
@@ -356,8 +375,10 @@ function buildScoreTooltip(ticker, col) {
       const sub = category.sub_scores || {};
       rows = [
         subScoreBar("Dip Signal",       sub.dip_signal,        30),
-        subScoreBar("SPY Divergence",   sub.spy_divergence,    20),
+
         subScoreBar("Short Setup",      sub.short_setup,       20),
+        subScoreBar("Price Discount",   sub.price_discount,    20),
+        subScoreBar("Buybacks",         sub.buyback_signal,    15),
         subScoreBar("Options Sentiment",sub.options_sentiment, 15),
         subScoreBar("Analyst Upside",   sub.analyst_upside,    15),
       ].join("");
@@ -402,10 +423,10 @@ function buildScoreTooltip(ticker, col) {
 
 function showScoreTooltip(event, ticker, col) {
   const el = document.getElementById("tooltip");
-  el.style.width = "360px";
+  el.style.width = "";
   el.innerHTML = buildScoreTooltip(ticker, col);
-  positionTooltip(event, el);
   el.style.display = "block";
+  positionTooltip(event, el);
 }
 
 // ── Raw data table (detail view) ──────────────────────────────────────────────
@@ -674,16 +695,14 @@ function fmDetails(sub) {
   if (sub.ni_trajectory  != null) p.push(sub.ni_trajectory  >= 13 ? "NI ↑"   : sub.ni_trajectory  >= 8  ? "NI →"  : "NI ↓");
   if (sub.gm_expansion   != null) p.push(sub.gm_expansion   >= 9  ? "GM ↑"   : sub.gm_expansion   >= 6  ? "GM →"  : "GM ↓");
   if (sub.rule_of_40     >= 5)    p.push("R40 ✓");
-  if (sub.buyback_signal >= 5)    p.push("Buybacks");
   return p.join(" · ") || "—";
 }
 
 function vqDetails(sub) {
   if (!sub) return "—";
   const p = [];
-  if (sub.price_discount    != null) p.push(sub.price_discount    >= 12 ? "Discount ↑" : "Near fair");
-  if (sub.balance_sheet     != null) p.push(sub.balance_sheet     >= 14 ? "Solid BS"   : sub.balance_sheet >= 8 ? "OK BS" : "Weak BS");
-  if (sub.profitability     != null) p.push(sub.profitability     >= 14 ? "Profitable" : sub.profitability >= 8 ? "OK margins" : "Thin");
+  if (sub.balance_sheet      != null) p.push(sub.balance_sheet     >= 14 ? "Solid BS"   : sub.balance_sheet >= 8 ? "OK BS" : "Weak BS");
+  if (sub.profitability      != null) p.push(sub.profitability     >= 14 ? "Profitable" : sub.profitability >= 8 ? "OK margins" : "Thin");
   if (sub.capital_discipline != null && sub.capital_discipline >= 7) p.push("Cap discipline ✓");
   return p.join(" · ") || "—";
 }
@@ -699,9 +718,11 @@ function icDetails(sub) {
 function poDetails(sub) {
   if (!sub) return "—";
   const p = [];
-  if (sub.dip_signal      != null) p.push(sub.dip_signal    >= 20 ? "Dip ↑"       : sub.dip_signal    >= 10 ? "Mild dip" : "No dip");
-  if (sub.short_setup     != null) p.push(sub.short_setup   >= 12 ? "Squeeze risk" : "Low short");
-  if (sub.spy_divergence  != null) p.push(sub.spy_divergence >= 12 ? "SPY lag ↑"  : "");
+  if (sub.dip_signal      != null) p.push(sub.dip_signal     >= 20 ? "Dip ↑"       : sub.dip_signal    >= 10 ? "Mild dip" : "No dip");
+  if (sub.price_discount  != null) p.push(sub.price_discount >= 12 ? "Discount ↑"   : "Near fair");
+  if (sub.buyback_signal  != null && sub.buyback_signal >= 8) p.push("Buybacks ↑");
+  if (sub.short_setup     != null) p.push(sub.short_setup    >= 12 ? "Squeeze risk" : "Low short");
+
   if (sub.options_sentiment != null && sub.options_sentiment >= 10) p.push("Fear (buy)");
   return p.filter(Boolean).join(" · ") || "—";
 }
@@ -825,8 +846,6 @@ function render(tickers, raw) {
 }
 
 // ── Home view ─────────────────────────────────────────────────────────────────
-let _homeRefreshTimer = null;
-let _detailRefreshTimer = null;
 let portfolio = [];
 let pfSortCol = "composite", pfSortDir = -1;
 let wlSortCol = "composite", wlSortDir = -1;
@@ -873,6 +892,21 @@ const SCORE_COLS = [
   { key: "composite", label: "Score"    },
 ];
 
+const STATUS_LIGHTS = [
+  { key: "snap",  title: "Snapshot (price & market data)" },
+  { key: "fund",  title: "Fundamentals annual"            },
+  { key: "qtrs",  title: "Quarterlies (≥2 quarters)"     },
+  { key: "ins",   title: "Insider transactions"           },
+  { key: "score", title: "Score computed"                 },
+];
+
+function renderStatusLights(status) {
+  if (!status) return `<div class="status-lights">${STATUS_LIGHTS.map(() => `<span class="sl sl-gray"></span>`).join("")}</div>`;
+  return `<div class="status-lights">${STATUS_LIGHTS.map(l =>
+    `<span class="sl sl-${status[l.key] || "gray"}" title="${l.title}"></span>`
+  ).join("")}</div>`;
+}
+
 function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
   const sorted = [...tickers].sort((a, b) => {
     const va = getScore(watchlistData[a], sc);
@@ -889,20 +923,40 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
     return `<th class="sortable-th${active ? " sort-active" : ""}" onclick="${sortFnName}('${c.key}')">${c.label}${arrow}</th>`;
   };
 
+  const lightsHeader = STATUS_LIGHTS.map(l => l.key[0].toUpperCase()).join(" ");
   const head = `<thead><tr>
     <th style="text-align:left">Ticker</th>
+    <th style="text-align:left">Sector</th>
     ${SCORE_COLS.map(thCell).join("")}
     <th>Updated</th>
+    <th title="${STATUS_LIGHTS.map(l => l.key[0].toUpperCase() + "=" + l.title).join(" · ")}" style="cursor:default">${lightsHeader}</th>
     <th></th>
   </tr></thead>`;
 
   const rows = sorted.map(ticker => {
-    const d = watchlistData[ticker];
+    const d      = watchlistData[ticker];
+    const status = tickerStatus[ticker];
+    const snap   = d?.snapshot;
+    const name   = snap?.name   || null;
+    const sector = snap?.sector || "—";
+
+    const tickerCell = `<td class="td-ticker"
+        onmouseenter="showTooltip(event, '${ticker}')"
+        onmouseleave="hideTooltip()">
+      <div>
+        <span class="ticker-link" onclick="navigate('#ticker/${ticker}')">${ticker}</span>
+        ${d ? `<span class="action-badge action-${d.data_ready ? (d.scores?.composite?.action || "NA") : "?"}" style="margin-left:6px">${d.data_ready ? (d.scores?.composite?.action || "NA") : "?"}</span>` : ""}
+      </div>
+      ${name ? `<div class="ticker-company">${name}</div>` : ""}
+    </td>`;
+
     if (!d) {
       return `<tr>
-        <td class="td-ticker"><span class="ticker-link" onclick="navigate('#ticker/${ticker}')">${ticker}</span></td>
+        ${tickerCell}
+        <td class="td-sector">—</td>
         <td colspan="5" class="subtext" style="font-size:11px">No data — click to fetch</td>
         <td class="subtext">—</td>
+        <td>${renderStatusLights(status)}</td>
         <td>${actionCell(ticker)}</td>
       </tr>`;
     }
@@ -918,20 +972,16 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
         onmouseleave="hideTooltip()">${s != null ? s.toFixed(1) : "—"}</td>`;
     }).join("");
 
-    const action    = ready ? (d.scores?.composite?.action || "NA") : "?";
     const refreshed = timeAgo(d.refreshed_at);
 
     return `<tr>
-      <td class="td-ticker"
-          onmouseenter="showTooltip(event, '${ticker}')"
-          onmouseleave="hideTooltip()">
-        <span class="ticker-link" onclick="navigate('#ticker/${ticker}')">${ticker}</span>
-        <span class="action-badge action-${action}" style="margin-left:6px">${action}</span>
-      </td>
+      ${tickerCell}
+      <td class="td-sector">${sector}</td>
       ${scoreCells}
       ${ready
         ? `<td class="subtext">${refreshed}</td>`
         : `<td class="s-null" style="font-size:10px">loading…</td>`}
+      <td>${renderStatusLights(status)}</td>
       <td style="text-align:right;white-space:nowrap">${actionCell(ticker)}</td>
     </tr>`;
   }).join("");
@@ -972,6 +1022,16 @@ function renderHomeSections() {
   dash.innerHTML = html;
 }
 
+async function loadStatus(tickers) {
+  if (!tickers.length) return;
+  try {
+    const res = await fetch("/api/status?tickers=" + tickers.join(","));
+    tickerStatus = await res.json();
+  } catch (e) {
+    console.error("Status load failed:", e);
+  }
+}
+
 async function showHome() {
   renderHeader("home");
   const dash = document.getElementById("dashboard");
@@ -986,24 +1046,17 @@ async function showHome() {
   }
 
   try {
-    const res = await fetch("/api/watchlist?tickers=" + allTickers.join(","));
-    watchlistData = await res.json();
+    const [wlRes, stRes] = await Promise.all([
+      fetch("/api/watchlist?tickers=" + allTickers.join(",")),
+      fetch("/api/status?tickers="   + allTickers.join(",")),
+    ]);
+    watchlistData = await wlRes.json();
+    tickerStatus  = await stRes.json();
   } catch (e) {
     console.error("Home load failed:", e);
   }
 
   renderHomeSections();
-
-  if (_homeRefreshTimer) clearInterval(_homeRefreshTimer);
-  _homeRefreshTimer = setInterval(async () => {
-    const tickers = [...new Set([...portfolio, ...watchlist])];
-    if (!tickers.length) return;
-    try {
-      const res = await fetch("/api/watchlist?tickers=" + tickers.join(","));
-      watchlistData = await res.json();
-      renderHomeSections();
-    } catch (e) { console.error("Auto-refresh failed:", e); }
-  }, 5 * 60 * 1000);
 }
 
 async function handleAddTicker() {
@@ -1080,13 +1133,7 @@ async function showDetail(ticker) {
   } catch (e) {
     dash.innerHTML = `<p class="subtext center">Failed to load ${ticker}.</p>`;
     console.error(e);
-    return;
   }
-
-  if (_detailRefreshTimer) clearInterval(_detailRefreshTimer);
-  _detailRefreshTimer = setInterval(async () => {
-    try { await _fetchAndRenderDetail(ticker); } catch (e) { console.error("Detail auto-refresh failed:", e); }
-  }, 5 * 60 * 1000);
 }
 
 // ── Header ────────────────────────────────────────────────────────────────────
@@ -1096,18 +1143,24 @@ async function handleRefreshAll() {
   const btn = document.getElementById("refresh-all-btn");
   if (btn) { btn.textContent = "↻ …"; btn.disabled = true; btn.classList.add("loading"); }
 
-  await Promise.all(allTickers.map(t =>
-    fetch(`/api/refresh/${t}`, { method: "POST" }).catch(() => {})
-  ));
+  await fetch("/api/refresh", { method: "POST" }).catch(() => {});
 
-  try {
-    const res = await fetch("/api/watchlist?tickers=" + allTickers.join(","));
-    watchlistData = await res.json();
-  } catch (e) {
-    console.error("Reload after refresh failed:", e);
+  while (true) {
+    await new Promise(r => setTimeout(r, 2000));
+    try {
+      const [wlRes, stRes] = await Promise.all([
+        fetch("/api/watchlist?tickers=" + allTickers.join(",")),
+        fetch("/api/status?tickers="   + allTickers.join(",")),
+      ]);
+      watchlistData = await wlRes.json();
+      tickerStatus  = await stRes.json();
+    } catch (e) {
+      console.error("Poll failed:", e);
+    }
+    renderHomeSections();
+    if (!tickerStatus._running) break;
   }
 
-  renderHomeSections();
   if (btn) { btn.textContent = "↻ Refresh"; btn.disabled = false; btn.classList.remove("loading"); }
 }
 
@@ -1165,8 +1218,6 @@ function navigate(hash) {
 
 function onRoute() {
   hideTooltip();
-  if (_homeRefreshTimer) { clearInterval(_homeRefreshTimer); _homeRefreshTimer = null; }
-  if (_detailRefreshTimer) { clearInterval(_detailRefreshTimer); _detailRefreshTimer = null; }
   const hash = window.location.hash;
   if (hash.startsWith("#ticker/")) {
     const t = hash.slice(8).toUpperCase().replace(/[^A-Z.]/g, "");
