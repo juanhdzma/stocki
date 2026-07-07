@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import select, update, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +27,26 @@ async def get_lists(session: AsyncSession = Depends(get_session)):
         lt = row.list_type if row.list_type in out else "watchlist"
         out[lt].append(row.ticker)
     return out
+
+
+@router.post("/lists/import")
+async def import_tickers(
+    tickers: list[str] = Body(...),
+    session: AsyncSession = Depends(get_session),
+):
+    valid = [t.strip().upper() for t in tickers if _TICKER_RE.match(t.strip().upper())][:500]
+    if not valid:
+        raise HTTPException(status_code=400, detail="No valid tickers")
+    await session.execute(delete(Watchlist))
+    now = datetime.now(timezone.utc).isoformat()
+    for t in valid:
+        stmt = pg_insert(Watchlist).values(
+            ticker=t, list_type="watchlist", added_at=now
+        ).on_conflict_do_nothing()
+        await session.execute(stmt)
+    await session.commit()
+    log.info("Imported %d tickers, replacing previous list", len(valid))
+    return {"ok": True, "imported": len(valid)}
 
 
 @router.post("/lists/{ticker}")

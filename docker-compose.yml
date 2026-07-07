@@ -20,8 +20,6 @@ services:
       DATABASE_URL: postgresql+asyncpg://stockdesk:${POSTGRES_PASSWORD:-stockdesk}@db:5432/stockdesk
     env_file:
       - .env
-    volumes:
-      - ./data/tickers.txt:/app/data/tickers.txt:ro
     depends_on:
       db:
         condition: service_healthy

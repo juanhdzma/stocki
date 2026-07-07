@@ -1195,6 +1195,8 @@ function renderHeader(mode, ticker, refreshedAt) {
     <button class="btn" onclick="handleAddTicker()">+</button>
   </div>
   <button id="refresh-all-btn" class="btn" onclick="handleRefreshAll()">↻ Refresh</button>
+  <button class="btn btn-secondary" onclick="triggerImport()" title="Replace all tickers from a CSV file">↑ Import</button>
+  <input id="import-file-input" type="file" accept=".txt,.csv" style="display:none" onchange="handleImportFile(event)">
 </div>`;
     loadVersionBadge();
   } else {
@@ -1229,6 +1231,54 @@ function onRoute() {
 window.addEventListener("hashchange", onRoute);
 window.addEventListener("DOMContentLoaded", onRoute);
 
+// ── Import tickers from file ──────────────────────────────────────────────────
+function triggerImport() {
+  const input = document.getElementById("import-file-input");
+  if (input) input.click();
+}
+
+async function handleImportFile(event) {
+  const file = event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+
+  const text = await file.text();
+  const tickers = text
+    .split(/[\s,;]+/)
+    .map(t => t.trim().toUpperCase())
+    .filter(t => t.length > 0 && t.length <= 10);
+
+  if (!tickers.length) {
+    alert("No valid tickers found in file.");
+    return;
+  }
+
+  const confirmed = confirm(
+    `⚠️ Warning: this will replace ALL current stocks with ${tickers.length} ticker(s) from the file.\n\n` +
+    `Tickers: ${tickers.slice(0, 20).join(", ")}${tickers.length > 20 ? ` … (+${tickers.length - 20} more)` : ""}\n\n` +
+    `Continue?`
+  );
+  if (!confirmed) return;
+
+  const res = await fetch("/api/lists/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(tickers),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert("Import failed: " + (err.detail || res.status));
+    return;
+  }
+
+  const { imported } = await res.json();
+  watchlist = [];
+  watchlistData = {};
+  await loadHome();
+  alert(`Imported ${imported} ticker(s) successfully.`);
+}
+
 window.navigate         = navigate;
 window.handleAddTicker  = handleAddTicker;
 window.handleRefreshAll = handleRefreshAll;
@@ -1237,6 +1287,8 @@ window.moveToPortfolio  = moveToPortfolio;
 window.moveToWatchlist  = moveToWatchlist;
 window.setPfSort        = setPfSort;
 window.setWlSort        = setWlSort;
+window.triggerImport    = triggerImport;
+window.handleImportFile = handleImportFile;
 window.showTooltip      = showTooltip;
 window.showScoreTooltip = showScoreTooltip;
 window.hideTooltip      = hideTooltip;

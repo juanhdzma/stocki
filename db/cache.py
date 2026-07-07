@@ -2,10 +2,9 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import AsyncGenerator
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import (
     AsyncSession, AsyncEngine, create_async_engine, async_sessionmaker,
@@ -19,34 +18,10 @@ logger = logging.getLogger(__name__)
 engine: AsyncEngine = create_async_engine(DATABASE_URL, pool_size=10, max_overflow=5)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
-_TICKERS_FILE = Path(__file__).parent.parent / "data" / "tickers.txt"
-
-
-def _load_seed_tickers() -> list[str]:
-    if not _TICKERS_FILE.exists():
-        return []
-    raw = _TICKERS_FILE.read_text().strip()
-    return [t for t in raw.split() if t]
-
 
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    async with AsyncSessionLocal() as session:
-        count = await session.scalar(select(func.count()).select_from(Watchlist))
-        if count == 0:
-            seed = _load_seed_tickers()
-            if seed:
-                now = datetime.now(timezone.utc).isoformat()
-                for ticker in seed:
-                    stmt = pg_insert(Watchlist).values(
-                        ticker=ticker, list_type="watchlist", added_at=now
-                    ).on_conflict_do_nothing()
-                    await session.execute(stmt)
-                await session.commit()
-                logger.info("Seeded watchlist with %d tickers from %s", len(seed), _TICKERS_FILE)
-            else:
-                logger.info("No seed tickers found (%s missing or empty)", _TICKERS_FILE)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

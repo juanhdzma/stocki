@@ -89,6 +89,7 @@ h1 {
 .btn:hover  { background: #2d333b; }
 .btn:active { background: #373e47; }
 .btn.loading { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { color: #8b949e; border-color: #30363d; }
 
 /* ── Main ────────────────────────────────────────────────── */
 main {
