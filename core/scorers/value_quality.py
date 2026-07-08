@@ -5,11 +5,11 @@ from .base import clamp, ttm, latest_quarters, finalize_score, analyst_upside_pt
 def score(fundamentals: list[dict], snapshot: dict) -> dict:
     sub: dict[str, float | None] = {}
     max_pts: dict[str, float] = {
-        "profitability":      20.0,
+        "profitability":      35.0,
+        "balance_sheet":      25.0,
         "valuation":          20.0,
-        "balance_sheet":      20.0,
-        "capital_discipline": 10.0,
-        "analyst_conviction": 10.0,
+        "capital_discipline": 12.0,
+        "analyst_conviction":  8.0,
     }
 
     # 1. Profitability quality (0-20)
