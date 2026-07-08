@@ -327,12 +327,12 @@ function buildScoreTooltip(ticker, col) {
       title = "Growth";
       const sub = category.sub_scores || {};
       rows = [
-        subScoreBar("Revenue Trend",  sub.revenue_trend,  25),
-        subScoreBar("NI Trajectory",  sub.ni_trajectory,  20),
-        subScoreBar("GM Expansion",   sub.gm_expansion,   15),
-        subScoreBar("FCF Trajectory", sub.fcf_trajectory, 15),
-        subScoreBar("R&D Intensity",  sub.rd_intensity,   10),
-        subScoreBar("Rule of 40",     sub.rule_of_40,      5),
+        subScoreBar("Revenue Trend",  sub.revenue_trend,  30),
+        subScoreBar("NI Trajectory",  sub.ni_trajectory,  28),
+        subScoreBar("GM Expansion",   sub.gm_expansion,   20),
+        subScoreBar("FCF Trajectory", sub.fcf_trajectory, 10),
+        subScoreBar("R&D Intensity",  sub.rd_intensity,    6),
+        subScoreBar("Rule of 40",     sub.rule_of_40,      6),
       ].join("");
       break;
     }
@@ -341,11 +341,11 @@ function buildScoreTooltip(ticker, col) {
       title = "Quality";
       const sub = category.sub_scores || {};
       rows = [
-        subScoreBar("Profitability",      sub.profitability,      20),
+        subScoreBar("Profitability",      sub.profitability,      35),
+        subScoreBar("Balance Sheet",      sub.balance_sheet,      25),
         subScoreBar("Valuation",          sub.valuation,          20),
-        subScoreBar("Balance Sheet",      sub.balance_sheet,      20),
-        subScoreBar("Capital Discipline", sub.capital_discipline, 10),
-        subScoreBar("Analyst Conviction", sub.analyst_conviction, 10),
+        subScoreBar("Capital Discipline", sub.capital_discipline, 12),
+        subScoreBar("Analyst Conviction", sub.analyst_conviction,  8),
       ].join("");
       break;
     }
@@ -369,34 +369,45 @@ function buildScoreTooltip(ticker, col) {
       ].join("");
       break;
     }
-    case "entry": {
-      category = scores.price_opportunity || {};
-      title = "Entry";
+    case "price_short": {
+      category = scores.price_short || {};
+      title = "Price Short";
       const sub = category.sub_scores || {};
       rows = [
-        subScoreBar("Dip Signal",       sub.dip_signal,        30),
-
-        subScoreBar("Short Setup",      sub.short_setup,       20),
-        subScoreBar("Price Discount",   sub.price_discount,    20),
-        subScoreBar("Buybacks",         sub.buyback_signal,    15),
-        subScoreBar("Options Sentiment",sub.options_sentiment, 15),
-        subScoreBar("Analyst Upside",   sub.analyst_upside,    15),
+        subScoreBar("Dip Signal",        sub.dip_signal,        50),
+        subScoreBar("Options Sentiment", sub.options_sentiment, 30),
+        subScoreBar("Short Setup",       sub.short_setup,       20),
       ].join("");
       break;
     }
-    case "composite": {
-      category = scores.composite || {};
-      title = "Score";
-      const weights = scores.composite?.weights || {fundamental_momentum: 30, value_quality: 30, insider_conviction: 25, price_opportunity: 15};
+    case "price_long": {
+      category = scores.price_long || {};
+      title = "Price Long";
+      const sub = category.sub_scores || {};
+      rows = [
+        subScoreBar("Price Discount", sub.price_discount, 40),
+        subScoreBar("Analyst Upside", sub.analyst_upside, 35),
+        subScoreBar("Buybacks",       sub.buyback_signal, 25),
+      ].join("");
+      break;
+    }
+    case "composite_short":
+    case "composite_long": {
+      const isShort = col === "composite_short";
+      category = scores[col] || {};
+      title = isShort ? "Score Short" : "Score Long";
+      const priceKey = isShort ? "price_short" : "price_long";
+      const priceLabel = isShort ? "P.Short" : "P.Long";
+      const weights = category.weights || {};
       const cats = [
-        { key: "fundamental_momentum", label: "Growth"   },
-        { key: "value_quality",        label: "Quality"  },
-        { key: "insider_conviction",   label: "Insiders" },
-        { key: "price_opportunity",    label: "Entry"    },
+        { key: "fundamental_momentum", label: "Growth"    },
+        { key: "value_quality",        label: "Quality"   },
+        { key: "insider_conviction",   label: "Insiders"  },
+        { key: priceKey,               label: priceLabel  },
       ];
       rows = cats.map(c => {
         const s  = scores[c.key]?.score;
-        const wt = weights[c.key];
+        const wt = weights[c.key] ?? weights[priceKey] ?? 25;
         const pct = s != null ? Math.min(100, s) : 0;
         const barColor = s != null ? (s >= 70 ? "var(--green)" : s >= 50 ? "var(--yellow)" : "var(--red)") : "";
         return `<div class="tt-sub-row">
@@ -992,12 +1003,18 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
     const ready = d.data_ready;
     const ret   = d?.returns  || {};
 
-    const fmtPct = v => v != null ? `<span class="${v >= 0 ? "s-green" : "s-red"}">${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%</span>` : "—";
+    const fmtPct = (v, th1 = 0.01, th2 = 0.05) => {
+      if (v == null) return "—";
+      const pct = v * 100;
+      const cls = v >= th2 ? "s-green" : v <= -th2 ? "s-red" : v >= th1 ? "s-yellow" : v <= -th1 ? "s-yellow" : "s-null";
+      return `<span class="${cls}">${v >= 0 ? "+" : ""}${pct.toFixed(1)}%</span>`;
+    };
+    const fmtDay = v => fmtPct(v, 0.01, 0.01);
     const fmtPrice = v => v != null ? `$${v.toFixed(2)}` : "—";
 
     const priceCells = `
       <td class="col-sep" style="font-variant-numeric:tabular-nums">${fmtPrice(snap.price)}</td>
-      <td style="font-variant-numeric:tabular-nums">${fmtPct(snap.day_change_pct != null ? snap.day_change_pct / 100 : null)}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtDay(snap.day_change_pct != null ? snap.day_change_pct / 100 : null)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_1w)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_12m)}</td>
       <td style="font-variant-numeric:tabular-nums">${snap.ath != null ? `$${snap.ath.toFixed(2)}` : "—"}</td>
