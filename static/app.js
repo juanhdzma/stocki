@@ -962,7 +962,7 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
   const rows = sorted.map(ticker => {
     const d      = watchlistData[ticker];
     const status = tickerStatus[ticker];
-    const snap   = d?.snapshot;
+    const snap   = d?.snapshot || {};
     const name   = snap?.name   || null;
     const sector = snap?.sector || "—";
 
@@ -990,7 +990,6 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
     }
 
     const ready = d.data_ready;
-    const snap  = d?.snapshot || {};
     const ret   = d?.returns  || {};
 
     const fmtPct = v => v != null ? `<span class="${v >= 0 ? "s-green" : "s-red"}">${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%</span>` : "—";
