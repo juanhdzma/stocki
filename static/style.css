@@ -97,7 +97,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 32px;
-  max-width: 1400px;
+  max-width: 90vw;
   margin: 0 auto;
 }
 
@@ -329,6 +329,10 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 .watchlist-table th.col-sep,
 .watchlist-table td.col-sep {
   border-left: 1px solid var(--border);
+}
+
+.watchlist-table th.col-ticker {
+  text-align: left;
 }
 
 .watchlist-table th.col-final,

@@ -869,9 +869,17 @@ async function loadLists() {
 }
 
 function getScore(d, col) {
-  if (!d?.scores) return null;
-  const s = d.scores;
+  if (!d) return null;
+  const snap = d.snapshot || {};
+  const ret  = d.returns  || {};
+  const s    = d.scores   || {};
   switch (col) {
+    case "ticker":           return null;
+    case "price":            return snap.price            ?? null;
+    case "day_change":       return snap.day_change_pct   ?? null;
+    case "week_change":      return ret.ticker_return_1w  ?? null;
+    case "year_change":      return ret.ticker_return_12m ?? null;
+    case "ath":              return snap.ath              ?? null;
     case "growth":           return s.fundamental_momentum?.score ?? null;
     case "quality":          return s.value_quality?.score        ?? null;
     case "insiders":         return s.insider_conviction?.score   ?? null;
@@ -937,6 +945,7 @@ function renderStatusLights(status) {
 
 function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
   const sorted = [...tickers].sort((a, b) => {
+    if (sc === "ticker") return a.localeCompare(b) * sd;
     const va = getScore(watchlistData[a], sc);
     const vb = getScore(watchlistData[b], sc);
     if (va === null && vb === null) return 0;
@@ -955,14 +964,20 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
   const sepTh = (c, extra = "") =>
     `<th class="col-sep ${extra} sortable-th${c.key === sc ? " sort-active" : ""}" onclick="${sortFnName}('${c.key}')">${c.label}${c.key === sc ? (sd > 0 ? " ↑" : " ↓") : ""}</th>`;
 
+  const sortTh = (key, label, extraClass = "") => {
+    const active = key === sc;
+    const arrow  = active ? (sd > 0 ? " ↑" : " ↓") : "";
+    return `<th class="${extraClass} sortable-th${active ? " sort-active" : ""}" onclick="${sortFnName}('${key}')">${label}${arrow}</th>`;
+  };
+
   const head = `<thead><tr>
-    <th style="text-align:left">Ticker</th>
+    ${sortTh("ticker", "Ticker", "col-ticker")}
     <th style="text-align:left">Sector</th>
-    <th class="col-sep">Price</th>
-    <th>Day %</th>
-    <th>1W %</th>
-    <th>52W %</th>
-    <th>ATH</th>
+    ${sortTh("price",       "Price",  "col-sep")}
+    ${sortTh("day_change",  "Day %")}
+    ${sortTh("week_change", "1W %")}
+    ${sortTh("year_change", "52W %")}
+    ${sortTh("ath",         "ATH")}
     ${SCORE_COLS_INTERMEDIATE.map((c, i) => i === 0 ? sepTh(c) : thCell(c)).join("")}
     ${SCORE_COLS_FINAL.map((c, i) => i === 0 ? sepTh(c, "col-final") : `<th class="col-final sortable-th${c.key === sc ? " sort-active" : ""}" onclick="${sortFnName}('${c.key}')">${c.label}${c.key === sc ? (sd > 0 ? " ↑" : " ↓") : ""}</th>`).join("")}
     <th class="col-sep">Updated</th>
