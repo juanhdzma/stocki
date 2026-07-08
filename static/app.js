@@ -4,7 +4,7 @@
 let watchlist = [];
 let watchlistData = {};
 let tickerStatus = {};
-let sortCol = "composite";
+let sortCol = "composite_short";
 let sortDir = -1;
 
 // ── Source URLs ───────────────────────────────────────────────────────────────
@@ -861,11 +861,13 @@ function getScore(d, col) {
   if (!d?.scores) return null;
   const s = d.scores;
   switch (col) {
-    case "growth":    return s.fundamental_momentum?.score ?? null;
-    case "quality":   return s.value_quality?.score        ?? null;
-    case "insiders":  return s.insider_conviction?.score   ?? null;
-    case "entry":     return s.price_opportunity?.score    ?? null;
-    case "composite": return s.composite?.score            ?? null;
+    case "growth":           return s.fundamental_momentum?.score ?? null;
+    case "quality":          return s.value_quality?.score        ?? null;
+    case "insiders":         return s.insider_conviction?.score   ?? null;
+    case "price_short":      return s.price_short?.score          ?? null;
+    case "price_long":       return s.price_long?.score           ?? null;
+    case "composite_short":  return s.composite_short?.score      ?? null;
+    case "composite_long":   return s.composite_long?.score       ?? null;
     default: return null;
   }
 }
@@ -884,13 +886,28 @@ function setWlSort(col) {
   renderHomeSections();
 }
 
-const SCORE_COLS = [
-  { key: "growth",    label: "Growth"   },
-  { key: "quality",   label: "Quality"  },
-  { key: "insiders",  label: "Insiders" },
-  { key: "entry",     label: "Entry"    },
-  { key: "composite", label: "Score"    },
+const PRICE_COLS = [
+  { key: "price",         label: "Price"  },
+  { key: "day_change",    label: "Day %"  },
+  { key: "week_change",   label: "1W %"   },
+  { key: "year_change",   label: "52W %"  },
+  { key: "ath",           label: "ATH"    },
 ];
+
+const SCORE_COLS_INTERMEDIATE = [
+  { key: "growth",      label: "Growth"    },
+  { key: "quality",     label: "Quality"   },
+  { key: "insiders",    label: "Insiders"  },
+  { key: "price_short", label: "P.Short"   },
+  { key: "price_long",  label: "P.Long"    },
+];
+
+const SCORE_COLS_FINAL = [
+  { key: "composite_short", label: "Short" },
+  { key: "composite_long",  label: "Long"  },
+];
+
+const SCORE_COLS = [...SCORE_COLS_INTERMEDIATE, ...SCORE_COLS_FINAL];
 
 const STATUS_LIGHTS = [
   { key: "snap",  title: "Snapshot (price & market data)" },
@@ -924,11 +941,20 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
   };
 
   const lightsHeader = STATUS_LIGHTS.map(l => l.key[0].toUpperCase()).join(" ");
+  const sepTh = (c, extra = "") =>
+    `<th class="col-sep ${extra} sortable-th${c.key === sc ? " sort-active" : ""}" onclick="${sortFnName}('${c.key}')">${c.label}${c.key === sc ? (sd > 0 ? " ↑" : " ↓") : ""}</th>`;
+
   const head = `<thead><tr>
     <th style="text-align:left">Ticker</th>
     <th style="text-align:left">Sector</th>
-    ${SCORE_COLS.map(thCell).join("")}
-    <th>Updated</th>
+    <th class="col-sep">Price</th>
+    <th>Day %</th>
+    <th>1W %</th>
+    <th>52W %</th>
+    <th>ATH</th>
+    ${SCORE_COLS_INTERMEDIATE.map((c, i) => i === 0 ? sepTh(c) : thCell(c)).join("")}
+    ${SCORE_COLS_FINAL.map((c, i) => i === 0 ? sepTh(c, "col-final") : `<th class="col-final sortable-th${c.key === sc ? " sort-active" : ""}" onclick="${sortFnName}('${c.key}')">${c.label}${c.key === sc ? (sd > 0 ? " ↑" : " ↓") : ""}</th>`).join("")}
+    <th class="col-sep">Updated</th>
     <th title="${STATUS_LIGHTS.map(l => l.key[0].toUpperCase() + "=" + l.title).join(" · ")}" style="cursor:default">${lightsHeader}</th>
     <th></th>
   </tr></thead>`;
@@ -945,7 +971,7 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
         onmouseleave="hideTooltip()">
       <div>
         <span class="ticker-link" onclick="navigate('#ticker/${ticker}')">${ticker}</span>
-        ${d ? `<span class="action-badge action-${d.data_ready ? (d.scores?.composite?.action || "NA") : "?"}" style="margin-left:6px">${d.data_ready ? (d.scores?.composite?.action || "NA") : "?"}</span>` : ""}
+        ${d ? `<span class="action-badge action-${d.data_ready ? (d.scores?.composite_short?.action || "NA") : "?"}" style="margin-left:6px">${d.data_ready ? (d.scores?.composite_short?.action || "NA") : "?"}</span>` : ""}
       </div>
       ${name ? `<div class="ticker-company">${name}</div>` : ""}
     </td>`;
@@ -954,33 +980,54 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
       return `<tr>
         ${tickerCell}
         <td class="td-sector">—</td>
-        <td colspan="5" class="subtext" style="font-size:11px">No data — click to fetch</td>
-        <td class="subtext">—</td>
+        <td colspan="${PRICE_COLS.length}" class="col-sep subtext" style="font-size:11px">No data</td>
+        <td colspan="${SCORE_COLS_INTERMEDIATE.length}" class="col-sep subtext">—</td>
+        <td colspan="${SCORE_COLS_FINAL.length}" class="col-sep subtext">—</td>
+        <td class="col-sep subtext">—</td>
         <td>${renderStatusLights(status)}</td>
         <td>${actionCell(ticker)}</td>
       </tr>`;
     }
 
     const ready = d.data_ready;
-    const scoreCells = SCORE_COLS.map(c => {
-      if (!ready) return `<td class="s-null"
+    const snap  = d?.snapshot || {};
+    const ret   = d?.returns  || {};
+
+    const fmtPct = v => v != null ? `<span class="${v >= 0 ? "s-green" : "s-red"}">${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%</span>` : "—";
+    const fmtPrice = v => v != null ? `$${v.toFixed(2)}` : "—";
+
+    const priceCells = `
+      <td class="col-sep" style="font-variant-numeric:tabular-nums">${fmtPrice(snap.price)}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtPct(snap.day_change_pct != null ? snap.day_change_pct / 100 : null)}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_1w)}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_12m)}</td>
+      <td style="font-variant-numeric:tabular-nums">${snap.ath != null ? `$${snap.ath.toFixed(2)}` : "—"}</td>
+    `;
+
+    const makeScoreCell = (c, extraClass = "") => {
+      if (!ready) return `<td class="s-null ${extraClass}"
         onmouseenter="showScoreTooltip(event,'${ticker}','${c.key}')"
         onmouseleave="hideTooltip()">?</td>`;
       const s = getScore(d, c.key);
-      return `<td class="${scoreColor(s)}"
+      return `<td class="${scoreColor(s)} ${extraClass}"
         onmouseenter="showScoreTooltip(event,'${ticker}','${c.key}')"
         onmouseleave="hideTooltip()">${s != null ? s.toFixed(1) : "—"}</td>`;
-    }).join("");
+    };
+
+    const intermediateCells = SCORE_COLS_INTERMEDIATE.map((c, i) => makeScoreCell(c, i === 0 ? "col-sep" : "")).join("");
+    const finalCells        = SCORE_COLS_FINAL.map((c, i) => makeScoreCell(c, i === 0 ? "col-sep col-final" : "col-final")).join("");
 
     const refreshed = timeAgo(d.refreshed_at);
 
     return `<tr>
       ${tickerCell}
       <td class="td-sector">${sector}</td>
-      ${scoreCells}
+      ${priceCells}
+      ${intermediateCells}
+      ${finalCells}
       ${ready
-        ? `<td class="subtext">${refreshed}</td>`
-        : `<td class="s-null" style="font-size:10px">loading…</td>`}
+        ? `<td class="col-sep subtext">${refreshed}</td>`
+        : `<td class="col-sep s-null" style="font-size:10px">loading…</td>`}
       <td>${renderStatusLights(status)}</td>
       <td style="text-align:right;white-space:nowrap">${actionCell(ticker)}</td>
     </tr>`;
@@ -1273,10 +1320,7 @@ async function handleImportFile(event) {
   }
 
   const { imported } = await res.json();
-  watchlist = [];
-  watchlistData = {};
-  await loadHome();
-  alert(`Imported ${imported} ticker(s) successfully.`);
+  window.location.reload();
 }
 
 window.navigate         = navigate;

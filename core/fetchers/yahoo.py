@@ -185,7 +185,7 @@ def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str,
                 closes = closes.to_frame(name=ticker)
 
         result: dict[str, float | None] = {}
-        periods = {"1m": 21, "3m": 63, "6m": 126, "12m": 252}
+        periods = {"1w": 5, "1m": 21, "3m": 63, "6m": 126, "12m": 252}
 
         for label, days in periods.items():
             for sym in [ticker, "SPY"]:
@@ -280,6 +280,22 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
     week52_high = _f(info.get("fiftyTwoWeekHigh"))
     pct_from_52w_high = (price - week52_high) / week52_high if (price and week52_high) else None
 
+    day_change_pct = _f(info.get("regularMarketChangePercent"))
+
+    ath = None
+    try:
+        if hist is not None and not hist.empty:
+            closes = hist["Close"]
+            col = ticker if ticker in closes.columns else (closes.columns[0] if len(closes.columns) == 1 else None)
+            if col is not None:
+                ath = float(closes[col].dropna().max())
+        if ath is None:
+            raw = yf.download(ticker, period="max", interval="1mo", auto_adjust=True, progress=False)
+            if not raw.empty:
+                ath = float(raw["Close"].max())
+    except Exception:
+        ath = week52_high
+
     return {
         # Price & market
         "name":                       info.get("longName") or info.get("shortName"),
@@ -290,6 +306,8 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "week52_high":                week52_high,
         "pct_from_52w_high":          pct_from_52w_high,
         "pct_from_1w_high":           pct_from_1w_high,
+        "day_change_pct":             day_change_pct,
+        "ath":                        ath,
         "beta":                       _f(info.get("beta")),
         "average_volume":             _f(info.get("averageVolume")),
         "shares_outstanding":         _f(info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")),

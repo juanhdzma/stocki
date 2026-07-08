@@ -89,7 +89,7 @@ h1 {
 .btn:hover  { background: #2d333b; }
 .btn:active { background: #373e47; }
 .btn.loading { opacity: 0.5; cursor: not-allowed; }
-.btn-secondary { color: #8b949e; border-color: #30363d; }
+.btn-secondary { color: var(--text); border-color: #30363d; }
 
 /* ── Main ────────────────────────────────────────────────── */
 main {
@@ -325,6 +325,16 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 }
 .watchlist-table thead th.sortable-th:hover { color: var(--blue); }
 .watchlist-table thead th.sort-active { color: var(--blue); }
+
+.watchlist-table th.col-sep,
+.watchlist-table td.col-sep {
+  border-left: 1px solid var(--border);
+}
+
+.watchlist-table th.col-final,
+.watchlist-table td.col-final {
+  font-weight: 700;
+}
 
 .td-ticker {
   text-align: left !important;
