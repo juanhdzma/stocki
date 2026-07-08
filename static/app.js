@@ -1018,13 +1018,12 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
     const ready = d.data_ready;
     const ret   = d?.returns  || {};
 
-    const fmtPct = (v, th1 = 0.01, th2 = 0.05) => {
+    const fmtPct = (v, th = 0.05) => {
       if (v == null) return "—";
-      const pct = v * 100;
-      const cls = v >= th2 ? "s-green" : v <= -th2 ? "s-red" : v >= th1 ? "s-yellow" : v <= -th1 ? "s-yellow" : "s-null";
-      return `<span class="${cls}">${v >= 0 ? "+" : ""}${pct.toFixed(1)}%</span>`;
+      const cls = v >= th ? "s-green" : v <= -th ? "s-red" : "s-yellow";
+      return `<span class="${cls}">${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%</span>`;
     };
-    const fmtDay = v => fmtPct(v, 0.01, 0.01);
+    const fmtDay = v => fmtPct(v, 0.01);
     const fmtPrice = v => v != null ? `$${v.toFixed(2)}` : "—";
 
     const priceCells = `
