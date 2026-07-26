@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from sqlalchemy import select
 
 import scheduler.worker as _worker
+from api.routers._payload import parse_ticker_csv
 from db.cache import AsyncSessionLocal
 from db.models import FetchTimestamp, FundamentalsHistory, MarketSnapshot
 
@@ -14,7 +15,7 @@ router = APIRouter()
 
 @router.get("/status")
 async def get_status(tickers: str = ""):
-    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()][:200]
+    ticker_list = parse_ticker_csv(tickers)
     if not ticker_list:
         return {}
 
@@ -51,31 +52,30 @@ async def get_status(tickers: str = ""):
         )
         insider_fetched: set[str] = {row.ticker for row in ins_rows}
 
+    def light(has_data: bool, err_key: str, in_flight: bool, errs: set[str]) -> str:
+        if in_flight:
+            return "yellow"
+        if err_key in errs:
+            return "red"
+        return "green" if has_data else "gray"
+
     result = {}
     for ticker in ticker_list:
         in_flight = ticker in _worker._in_flight
         errs = _worker._errors.get(ticker, set())
-        snap = snap_map.get(ticker)
 
-        has_snap = snap is not None
+        has_snap = ticker in snap_map
         has_ins = ticker in insider_fetched
         has_annual = annual_count.get(ticker, 0) >= 1
         has_qtrs = quarterly_count.get(ticker, 0) >= 2
         has_score = has_snap and has_qtrs
 
-        def light(has_data: bool, err_key: str) -> str:
-            if in_flight:
-                return "yellow"
-            if err_key in errs:
-                return "red"
-            return "green" if has_data else "gray"
-
         result[ticker] = {
-            "snap": light(has_snap, "snapshot"),
-            "fund": light(has_annual, "fundamentals"),
-            "qtrs": light(has_qtrs, "fundamentals"),
-            "ins": light(has_ins, "insider"),
-            "score": light(has_score, "score"),
+            "snap": light(has_snap, "snapshot", in_flight, errs),
+            "fund": light(has_annual, "fundamentals", in_flight, errs),
+            "qtrs": light(has_qtrs, "fundamentals", in_flight, errs),
+            "ins": light(has_ins, "insider", in_flight, errs),
+            "score": light(has_score, "score", in_flight, errs),
         }
 
     result["_running"] = _worker._refresh_running

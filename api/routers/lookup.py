@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time as _time
-from datetime import UTC, datetime, timedelta
+import time
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -22,6 +22,7 @@ from db.cache import (
     write_snapshot,
 )
 from db.models import MarketSnapshot
+from util import parse_iso_aware, today_and_week_ago, utcnow_iso
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -37,15 +38,10 @@ async def _get_snapshot_info(session: AsyncSession, ticker: str) -> tuple[float 
         select(MarketSnapshot.refreshed_at).where(MarketSnapshot.ticker == ticker)
     )
     row = result.first()
-    if not row or not row.refreshed_at:
+    ts = parse_iso_aware(row.refreshed_at) if row else None
+    if ts is None:
         return None, None
-    try:
-        ts = datetime.fromisoformat(row.refreshed_at)
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=UTC)
-        return (datetime.now(UTC) - ts).total_seconds(), row.refreshed_at
-    except Exception:
-        return None, None
+    return (datetime.now(UTC) - ts).total_seconds(), row.refreshed_at
 
 
 async def _snapshot_age_seconds(session: AsyncSession, ticker: str) -> float | None:
@@ -65,13 +61,13 @@ async def lookup_ticker(ticker: str, session: AsyncSession = Depends(get_session
         log.info("[%s] lookup: fetching live data", ticker)
         async with _auth_lock:
             global _last_auth_at
-            if _time.monotonic() - _last_auth_at > _AUTH_INTERVAL:
+            if time.monotonic() - _last_auth_at > _AUTH_INTERVAL:
                 await asyncio.to_thread(init_auth)
-                _last_auth_at = _time.monotonic()
+                _last_auth_at = time.monotonic()
         try:
             snap = await asyncio.to_thread(fetch_market_snapshot, ticker)
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Failed to fetch {ticker}: {exc}")
+            raise HTTPException(status_code=502, detail=f"Failed to fetch {ticker}: {exc}") from exc
 
         try:
             txs = await asyncio.to_thread(fetch_insider_transactions, ticker, days_back=365)
@@ -85,7 +81,7 @@ async def lookup_ticker(ticker: str, session: AsyncSession = Depends(get_session
             else (existing.get("insider_transactions", []) if existing else [])
         )
         await write_snapshot(session, ticker, snap)
-        refreshed_at = datetime.now(UTC).isoformat()
+        refreshed_at = utcnow_iso()
 
         try:
             periods = await asyncio.to_thread(fetch_fundamentals, ticker)
@@ -100,8 +96,7 @@ async def lookup_ticker(ticker: str, session: AsyncSession = Depends(get_session
         refreshed_at = cached_refreshed_at
 
     funds = await read_all_fundamentals(session, ticker)
-    today = datetime.now(UTC).date().isoformat()
-    week_ago = (datetime.now(UTC).date() - timedelta(days=7)).isoformat()
+    today, week_ago = today_and_week_ago()
     week_ago_scores = await read_score_history_reference(session, ticker, week_ago, today)
     payload = build_payload(ticker, snap, funds, refreshed_at, week_ago_scores)
 

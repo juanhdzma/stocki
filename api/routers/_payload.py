@@ -7,6 +7,12 @@ from datetime import date
 log = logging.getLogger(__name__)
 
 _TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,12}$")
+_MAX_TICKERS = 200
+
+
+def parse_ticker_csv(tickers: str) -> list[str]:
+    """Parse a comma-separated ticker query param into an upper-cased, de-blanked, capped list."""
+    return [t.strip().upper() for t in tickers.split(",") if t.strip()][:_MAX_TICKERS]
 
 
 def build_payload(

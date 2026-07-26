@@ -24,6 +24,7 @@ from db.models import (
     ScoreHistory,
     Watchlist,
 )
+from util import parse_iso_aware, utcnow_iso
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ async def write_fundamentals(
         ticker=ticker,
         period=period,
         data_json=json.dumps(data),
-        created_at=datetime.now(UTC).isoformat(),
+        created_at=utcnow_iso(),
     )
     # A period first fetched right after its report can be partial (cash-flow/balance-sheet
     # rows still null while the income statement is populated); on_conflict_do_nothing would
@@ -130,7 +131,7 @@ async def write_snapshot(session: AsyncSession, ticker: str, data: dict) -> None
     stmt = pg_insert(MarketSnapshot).values(
         ticker=ticker,
         data_json=json.dumps(data),
-        refreshed_at=datetime.now(UTC).isoformat(),
+        refreshed_at=utcnow_iso(),
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["ticker"],
@@ -225,17 +226,14 @@ async def get_last_fetch(session: AsyncSession, ticker: str, data_type: str) -> 
         )
     )
     row = result.scalars().first()
-    if not row:
-        return None
-    dt = datetime.fromisoformat(row.fetched_at)
-    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+    return parse_iso_aware(row.fetched_at) if row else None
 
 
 async def set_last_fetch(session: AsyncSession, ticker: str, data_type: str) -> None:
     stmt = pg_insert(FetchTimestamp).values(
         ticker=ticker,
         data_type=data_type,
-        fetched_at=datetime.now(UTC).isoformat(),
+        fetched_at=utcnow_iso(),
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["ticker", "data_type"],

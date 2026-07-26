@@ -29,6 +29,6 @@ async def price_history(ticker: str, period: str = "1y"):
     except Exception as exc:
         raise HTTPException(
             status_code=502, detail=f"Failed to fetch price history for {ticker}: {exc}"
-        )
+        ) from exc
 
     return {"ticker": ticker, "period": period, "points": points}

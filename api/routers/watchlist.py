@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.routers._payload import _TICKER_RE, build_payload
+from api.routers._payload import _TICKER_RE, build_payload, parse_ticker_csv
 from db.cache import (
     AsyncSessionLocal,
     get_session,
@@ -17,6 +16,7 @@ from db.cache import (
     read_score_history_reference_batch,
 )
 from db.models import MarketSnapshot, PortfolioHolding, Watchlist
+from util import today_and_week_ago, utcnow_iso
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -55,7 +55,7 @@ async def import_tickers(
         raise HTTPException(status_code=400, detail="No valid tickers")
     await session.execute(delete(Watchlist))
     await session.execute(delete(PortfolioHolding))
-    now = datetime.now(UTC).isoformat()
+    now = utcnow_iso()
     for t in valid:
         stmt = (
             pg_insert(Watchlist)
@@ -77,7 +77,7 @@ async def add_ticker(
         raise HTTPException(status_code=400, detail="Invalid ticker")
     if list_type not in ("watchlist", "portfolio"):
         raise HTTPException(status_code=400, detail="list_type must be watchlist or portfolio")
-    now = datetime.now(UTC).isoformat()
+    now = utcnow_iso()
     stmt = (
         pg_insert(Watchlist)
         .values(ticker=ticker, list_type="watchlist", added_at=now)
@@ -116,9 +116,7 @@ async def move_ticker(ticker: str, list_type: str, session: AsyncSession = Depen
     if list_type == "portfolio":
         stmt = (
             pg_insert(PortfolioHolding)
-            .values(
-                ticker=ticker, avg_cost=None, shares=None, added_at=datetime.now(UTC).isoformat()
-            )
+            .values(ticker=ticker, avg_cost=None, shares=None, added_at=utcnow_iso())
             .on_conflict_do_nothing()
         )
         await session.execute(stmt)
@@ -141,9 +139,7 @@ async def update_holding(
     shares = data.get("shares")
     stmt = (
         pg_insert(PortfolioHolding)
-        .values(
-            ticker=ticker, avg_cost=avg_cost, shares=shares, added_at=datetime.now(UTC).isoformat()
-        )
+        .values(ticker=ticker, avg_cost=avg_cost, shares=shares, added_at=utcnow_iso())
         .on_conflict_do_update(
             index_elements=["ticker"],
             set_={"avg_cost": avg_cost, "shares": shares},
@@ -156,12 +152,11 @@ async def update_holding(
 
 @router.get("/watchlist")
 async def get_watchlist_data(tickers: str = ""):
-    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()][:200]
+    ticker_list = parse_ticker_csv(tickers)
     if not ticker_list:
         return {}
 
-    today = datetime.now(UTC).date().isoformat()
-    week_ago = (datetime.now(UTC).date() - timedelta(days=7)).isoformat()
+    today, week_ago = today_and_week_ago()
 
     # Batched: 3 queries total for the whole ticker list instead of ~3 per ticker —
     # this endpoint gets polled often (refresh progress, rescore), so N+1 here was
