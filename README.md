@@ -55,6 +55,25 @@ Columns: **snap** (price snapshot) · **fund** (annual fundamentals) · **qtrs**
 
 Click any ticker row to open its detail view: price target bar, revenue/net income chart, key ratios, insider activity, and score breakdown.
 
+## Reading the table
+
+**Scores (0–100)** — hover any for the full breakdown:
+- **Growth** — revenue/earnings trajectory. **Quality** — profitability, balance sheet, durability. **Insiders** — conviction-weighted buy/sell activity. **Sentimiento** — FCF yield, valuation, analyst upside/conviction. **Long** — the weighted composite that drives the verdict.
+
+**Verdict** (per Long score): Strong Buy ≥80 · Buy ≥60 · Hold ≥40 · Sell ≥20 · Strong Sell <20.
+
+**Buy Target** — is it time to buy, or wait for a dip?
+- **COMPRAR** (green) — buy at/below the shown price.
+- **CASI −X%** (amber) — almost; a small dip (≤4%) away.
+- **ESPERAR −X%** (red) — still expensive; wait for that dip.
+
+**Risk flags** (next to the verdict):
+- `REV↓` revenue shrinking · `CYCLICAL` growth is a likely cycle peak, not durable · `$$$` expensive valuation · `E-Nd` earnings in N days · `PRICE?` quote looks wrong (>50% off prior close).
+
+**Status symbol**: `✓` data ok · `⟳` fetching · `✕` a fetch failed · `·` pending.
+
+In the **portfolio** table, a `⚠` next to your gain/loss means you're in profit but the verdict has decayed to Hold/Sell — the thesis rotted while it ran.
+
 ## Environment
 
 Optional `.env` file at the repo root:

@@ -75,15 +75,17 @@ All scores are **0–100**. `compute_all()` in `composite.py` returns:
 |-----|-----------|-------------|
 | `fundamental_momentum` | Growth | Revenue trend, NI trajectory, GM expansion, FCF trajectory, R&D intensity, Rule-of-40, estimate revisions, growth consistency (accel/decel) |
 | `value_quality` | Quality | Profitability, cash position, execution track, margin durability, earnings quality, balance sheet, capital discipline, buyback + insider-ownership bonuses |
-| `insider_conviction` | Insiders | Conviction-weighted buy/sell activity (see below) |
-| `price_long` | Price | Price discount, FCF yield, analyst upside/conviction, valuation, short-squeeze bonus |
+| `insider_conviction` | Insiders | Conviction-weighted buy/sell activity (see below) — `None` (excluded) when no trades survive filtering, not a neutral 50 |
+| `price_long` | Sentimiento | FCF yield, analyst upside, valuation, analyst conviction (key is still `price_long`; user-facing label is "Sentimiento") |
 | `composite_long` | Long | Weighted composite — the only investment horizon this app scores (no Short) |
+| `buy_target` | — | Buy-now vs wait-for-a-dip signal (see below), not a 0–100 score |
+| `flags` | — | Risk flags surfaced next to the verdict (see Tags reference) |
 
-Growth/Quality/Insiders/Price are deliberately independent axes — valuation and analyst signals live only in `price_long` (not `value_quality`), trajectory-only signals live only in `fundamental_momentum`, and level/durability-only signals live only in `value_quality`. Don't let a "quality" fix leak a price or sentiment input back in, or vice versa.
+Growth/Quality/Insiders/Sentimiento are deliberately independent axes — valuation and analyst signals live only in `price_long` (not `value_quality`), trajectory-only signals live only in `fundamental_momentum`, and level/durability-only signals live only in `value_quality`. Don't let a "quality" fix leak a price or sentiment input back in, or vice versa.
 
 ### `composite_long` (`core/scorers/composite.py`)
 
-Quality-ranked: `fundamental_momentum`/`value_quality`/`insider_conviction` weighted 40/50/10 (`_QUALITY_WEIGHTS_LONG`, missing components excluded and the rest renormalized) forms a `quality` figure that dominates the score. Price and a recent-dip bonus are small, *bounded* additive modifiers on top (`_PRICE_BOOST_MAX = 6`, `_DIP_BONUS_MAX = 10`), not a ceiling-setter. A cheap price (via `price_long`, itself leaning on analyst targets the code's own comment flags as bullish-skewed) or a beta-adjusted recent selloff (`_dip_bonus` — day return ×2.2 vs. week return, whichever is larger, divided by beta) can tip a good-not-great business into STRONG-BUY, but neither can outrank a materially better business or rescue a bad one — quality gaps ≥ 7 points are mathematically un-invertible by price alone (boost max 6 < 7).
+Quality-ranked: `fundamental_momentum`/`value_quality`/`insider_conviction` weighted **40/45/15** (`_QUALITY_WEIGHTS_LONG`, missing components excluded and the rest renormalized) forms a `quality` figure that dominates the score. (Insiders is 15% — not the old 10% — because `insider_conviction` now returns `None` when there's no real signal instead of a permanent neutral 50, so its weight only bites when there's actual conviction data.) Price and a recent-dip bonus are small, *bounded* additive modifiers on top (`_PRICE_BOOST_MAX = 6`, `_DIP_BONUS_MAX = 10`), not a ceiling-setter. A cheap price (via `price_long`, itself leaning on analyst targets the code's own comment flags as bullish-skewed) or a beta-adjusted recent selloff (`_dip_bonus` — day return ×2.2 vs. week return, whichever is larger, divided by beta) can tip a good-not-great business into STRONG-BUY, but neither can outrank a materially better business or rescue a bad one — quality gaps ≥ 7 points are mathematically un-invertible by price alone (boost max 6 < 7).
 
 **Guardrail**: if `snapshot.revenue_growth < 0`, the final score is capped at 79.9 (just under STRONG-BUY) regardless of how high trailing profitability/balance-sheet quality scores — a business with genuinely shrinking revenue shouldn't hit the top tier on trailing quality alone (real case: QCOM at -3.5% YoY revenue was hitting 84.9 STRONG-BUY purely on `value_quality`=98).
 
@@ -103,7 +105,7 @@ Each scorer builds a `sub` dict of raw sub-score values and a matching `max_pts`
 
 **`value_quality.py` (Quality)** — all level/durability, no price or sentiment: `profitability` (0-35, ROE/ROA/net_margin tiers; net_margin is discounted to the breakeven tier if it wildly outpaces a negative `operating_margin` — gap >20pp reads as a one-off gain masking real losses, real case: NBIS net_margin 93% vs. operating_margin -32%), `cash_runway` (0-15, branches on `ttm_fcf < 0`: burning → survival runway in quarters; not burning → cash/ttm_revenue cushion ratio — same key answers "will it survive" for distressed names and "how thick is the buffer" for healthy ones, so it's never blank just because a company is profitable), `execution_track` (0-10, % of last 4 quarters beating EPS estimate), `margin_durability` (0-12, trend + residual-noise decomposition of annual `gross_margin` — rising/flat-tight margins score well regardless of magnitude of change, only real erosion or a genuine historical dip costs points even if since recovered; falls back to a derived net_margin trend when `gross_margin` isn't reported at all, i.e. banks/fintechs), `earnings_quality` (0-10, TTM `operating_cash_flow`/`net_income` — `None` unless net income is positive), `balance_sheet` (0-25, current_ratio/D2E skipped for Financial Services, interest coverage applies to all), `capital_discipline` (0-8, `dilution_rate` tiers), `buyback_bonus` (0-2) + `insider_ownership_bonus` (0-3, additive only).
 
-**`price_long.py` (Price)** — all price/valuation/sentiment, no business quality: `price_discount` (0-25, beta-dampened distance from 52w high), `fcf_yield` (0-45, ttm FCF / market cap), `analyst_upside` (0-30, coverage-weighted price-target upside), `valuation` (0-20, fwd/trailing PE ratio, PEG, growth-adjusted P/S), `analyst_conviction` (0-8, bull/bear recommendation distribution), `short_squeeze_bonus` (0-5, additive only, `short_percent_of_float` scaled between 5% and 25%).
+**`price_long.py` (Sentimiento)** — all valuation/sentiment, no business quality: `fcf_yield` (0-45, ttm FCF / market cap; for foreign filers the local-currency FCF is converted to the price currency via `snapshot["fx_rate"]` rather than dropped), `analyst_upside` (0-30, coverage-weighted price-target upside), `valuation` (0-20, fwd/trailing PE ratio, PEG, growth-adjusted P/S), `analyst_conviction` (0-8, bull/bear recommendation distribution). (`price_discount` and `short_squeeze_bonus` were removed in the "Sentimiento" rework — this axis no longer carries a price-level or short-interest signal.)
 
 ### Insider conviction score (`core/insider_score.py`)
 
@@ -146,6 +148,30 @@ JS helpers (defined in `app.js`):
 | < 20 | `STRONG-SELL` | Strong Sell |
 
 CSS classes: `.action-STRONG-BUY`, `.action-BUY`, `.action-HOLD`, `.action-SELL`, `.action-STRONG-SELL`, `.action-NA`.
+
+## `buy_target` — buy-now vs wait-for-a-dip signal (`composite.py::_buy_target`)
+
+Anchored on the **current price** (a modest pullback from here), NOT a position in the full 52-week range — calibrated against real per-ticker judgement. Three regimes:
+1. **Washed out** — within `_BUY_TARGET_LOW_ZONE` (8%) of the 52w low → it has bottomed → BUY now.
+2. **Rising** (`trend ≥ 0`) — wait for a dip that grows with the log of the 12m run (froth), scaled by the ticker's own `typical_pullback_pct` (bounded [0.7, 1.4], centered at 1.0; `None` → 1.0). Capped at `_BUY_TARGET_FROTH_MAX` (11%).
+3. **Falling** — wait toward the 52w low (`low + 0.45·(price − low)`), capped at a 6% dip.
+
+Returns `{price, pct_from_current, signal}` where `signal` is `"buy"` (price ≤ target) or `"wait"`. Frontend (`fmtBuyTargetHtml`): **COMPRAR** (green) / **CASI −X%** (amber, dip ≤4%) / **ESPERAR −X%** (red), always with the `≤ $threshold`.
+
+## Tags reference (badges rendered next to the verdict)
+
+**Risk flags** (`compute_all`'s `flags`, rendered by `riskFlags()`):
+| Tag | Meaning |
+|-----|---------|
+| `REV↓` | Revenue shrinking YoY — composite capped below STRONG-BUY |
+| `CYCLICAL` | Big revenue surge off a prior down-year — likely a cycle peak (Growth inflated), not durable growth |
+| `$$$` | Valuation in the expensive tier |
+| `E-Nd` | Earnings in ~N days — event risk |
+| `PRICE?` | Quote deviates >50% from prior close (`price_suspect`) — data may be wrong |
+
+**Fetch-status symbol** (one per row): `✓` ok · `⟳` in progress · `✕` a fetch failed · `·` pending/partial.
+
+**Portfolio only**: `⚠` next to Diff = holding is in profit but the verdict decayed to HOLD/SELL (thesis rotted).
 
 ## DB tables
 - `market_snapshot` — one row per ticker, `data_json` holds price + fundamentals + insider transactions + scores
