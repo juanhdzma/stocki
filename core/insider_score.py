@@ -68,14 +68,14 @@ def _parse_pct(v) -> float | None:
         return None  # >999% = new position; treated as max conviction in _tx_strength
     try:
         return float(s) / 100
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 
 def _parse_usd(v) -> float | None:
     try:
         return abs(float(re.sub(r"[^\d.-]", "", str(v))))
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 

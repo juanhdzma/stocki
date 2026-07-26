@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import nullsfirst, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from core.fetchers.openinsider import fetch_insider_transactions
 from core.fetchers.yahoo import (
@@ -31,6 +32,7 @@ from db.cache import (
     write_snapshot,
 )
 from db.models import MarketSnapshot, PortfolioHolding, PortfolioPrice, Watchlist
+from util import utcnow_iso
 
 INSIDER_TTL = timedelta(hours=24)
 FUNDAMENTALS_TTL = timedelta(days=7)
@@ -51,6 +53,22 @@ _in_flight: set[str] = set()
 _errors: dict[str, set[str]] = {}
 _refresh_running: bool = False
 _pf_refresh_running: bool = False
+
+# Keep a reference to fire-and-forget tasks so they aren't garbage-collected mid-run, and
+# surface any exception instead of letting it vanish silently (the default for a lost task).
+_background_tasks: set[asyncio.Task] = set()
+
+
+def spawn_background(coro, name: str) -> None:
+    task = asyncio.create_task(coro, name=name)
+    _background_tasks.add(task)
+
+    def _done(t: asyncio.Task) -> None:
+        _background_tasks.discard(t)
+        if not t.cancelled() and (exc := t.exception()) is not None:
+            log.error("background task %r failed: %s", t.get_name(), exc)
+
+    task.add_done_callback(_done)
 
 
 def _market_zone(ticker: str):
@@ -256,7 +274,7 @@ async def _refresh_all_impl(force: bool = False) -> None:
         results = await asyncio.gather(
             *[refresh_one(t, hist, force=force) for t in batch], return_exceptions=True
         )
-        for ticker, res in zip(batch, results):
+        for ticker, res in zip(batch, results, strict=True):
             if isinstance(res, Exception):
                 log.error("[%s] refresh failed: %s", ticker, res)
         if i + batch_size < len(ordered):
@@ -293,12 +311,10 @@ async def refresh_portfolio_prices() -> None:
 
         await asyncio.to_thread(init_auth)
 
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
-
         async def _refresh_one_price(ticker: str) -> None:
             try:
                 data = await asyncio.to_thread(fetch_portfolio_price, ticker, hist)
-                now = datetime.now(UTC).isoformat()
+                now = utcnow_iso()
                 async with AsyncSessionLocal() as s:
                     ins = pg_insert(PortfolioPrice).values(
                         ticker=ticker,

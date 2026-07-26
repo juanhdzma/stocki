@@ -768,7 +768,7 @@ def test_insider_post_earnings_sell_bonus_is_much_weaker_than_buy():
         "trade_date": "2026-05-05",
         "filing_date": "2026-05-06",
     }
-    kwargs = dict(market_cap=5e9, week52_low=40.0, week52_high=70.0)
+    kwargs = {"market_cap": 5e9, "week52_low": 40.0, "week52_high": 70.0}
 
     buy_delta = (
         compute_insider_score([buy], earnings_dates=["2026-05-02"], **kwargs)["score"]
@@ -1188,7 +1188,7 @@ def test_buy_target_bigger_run_means_deeper_dip():
     from core.scorers.composite import _buy_target
 
     # froth: a parabola gets a deeper (but capped) dip than a mildly rising name.
-    common = dict(low_52w=100.0, high_52w=1000.0)
+    common = {"low_52w": 100.0, "high_52w": 1000.0}
     mild = _buy_target(_bt_snap(500.0, ret12=0.30, **common))
     parab = _buy_target(_bt_snap(500.0, ret12=7.0, **common))
     assert parab["price"] < mild["price"]
@@ -1222,7 +1222,7 @@ def test_buy_target_ignores_analyst_targets():
     from core.scorers.composite import _buy_target
 
     # sky-high analyst targets must not enter the calculation
-    snap = dict(price=382.0, low_52w=282.0, high_52w=495.0, ret12=0.33)
+    snap = {"price": 382.0, "low_52w": 282.0, "high_52w": 495.0, "ret12": 0.33}
     with_targets = _buy_target(_bt_snap(target_low=900.0, target_mean=1200.0, **snap))
     without = _buy_target(_bt_snap(**snap))
     assert with_targets["price"] == without["price"]

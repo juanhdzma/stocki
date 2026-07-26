@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 
 from fastapi import APIRouter
@@ -8,7 +7,7 @@ from sqlalchemy import select
 
 from db.cache import AsyncSessionLocal
 from db.models import PortfolioHolding, PortfolioPrice
-from scheduler.worker import is_pf_refresh_running, refresh_portfolio_prices
+from scheduler.worker import is_pf_refresh_running, refresh_portfolio_prices, spawn_background
 
 router = APIRouter()
 
@@ -29,5 +28,5 @@ async def get_portfolio_prices():
 
 @router.post("/portfolio/refresh")
 async def trigger_portfolio_refresh():
-    asyncio.create_task(refresh_portfolio_prices())
+    spawn_background(refresh_portfolio_prices(), name="refresh_portfolio_prices")
     return {"status": "started"}

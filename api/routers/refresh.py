@@ -1,15 +1,13 @@
-import asyncio
-
 from fastapi import APIRouter
 
-from scheduler.worker import refresh_all, refresh_one
+from scheduler.worker import refresh_all, refresh_one, spawn_background
 
 router = APIRouter()
 
 
 @router.post("/refresh")
 async def trigger_refresh_all():
-    asyncio.create_task(refresh_all(force=True))
+    spawn_background(refresh_all(force=True), name="refresh_all")
     return {"status": "started"}
 
 

@@ -45,11 +45,24 @@ def _asset_version(path: str) -> str:
         return "0"
 
 
-@app.get("/")
-def root():
+def _build_index_html() -> str:
     js_v = _asset_version("static/app.js")
     css_v = _asset_version("static/style.css")
-    html = open("static/index.html").read()
+    with open("static/index.html") as f:
+        html = f.read()
     html = html.replace("/static/app.js", f"/static/app.js?v={js_v}")
     html = html.replace("/static/style.css", f"/static/style.css?v={css_v}")
-    return HTMLResponse(html)
+    return html
+
+
+# Cached after the first request: assets are baked into the image (or served under
+# --reload, which restarts the process on change), so the hash never changes at runtime.
+_index_html: str | None = None
+
+
+@app.get("/")
+async def root():
+    global _index_html
+    if _index_html is None:
+        _index_html = _build_index_html()
+    return HTMLResponse(_index_html)

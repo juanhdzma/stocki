@@ -55,7 +55,7 @@ def fetch_insider_transactions(ticker: str, days_back: int = 365) -> list[dict] 
         cells = [td.get_text(strip=True) for td in tr.find_all("td")]
         if len(cells) != len(raw_headers):
             continue
-        raw = dict(zip(raw_headers, cells))
+        raw = dict(zip(raw_headers, cells, strict=True))
         normalized = {_COL_MAP.get(k, k): v for k, v in raw.items()}
         rows.append(normalized)
 

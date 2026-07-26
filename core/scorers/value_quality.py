@@ -27,7 +27,7 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     # market_cap come in USD — any ratio mixing the two (P/S, buybacks/mcap) is meaningless.
     fx_mismatch = currency_mismatch(snapshot)
 
-    # 1. Profitability quality (0-20)
+    # 1. Profitability quality (0-35)
     roe = snapshot.get("roe")
     roa = snapshot.get("roa")
     net_m = snapshot.get("net_margin")
@@ -135,7 +135,9 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
         den = sum((x - mean_x) ** 2 for x in xs)
         raw_slope = num / den if den else 0.0
         trend = raw_slope / abs(mean_y) if mean_y else 0.0
-        residuals = [y - (mean_y + raw_slope * (x - mean_x)) for x, y in zip(xs, margins, strict=True)]
+        residuals = [
+            y - (mean_y + raw_slope * (x - mean_x)) for x, y in zip(xs, margins, strict=True)
+        ]
         residual_cv = ((sum(r**2 for r in residuals) / n) ** 0.5) / abs(mean_y) if mean_y else None
         if trend < -0.03:
             sub["margin_durability"] = 3.0

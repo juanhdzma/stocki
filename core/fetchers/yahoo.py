@@ -208,7 +208,8 @@ def _compute_1w_pct(
             return None
         h1w = float(highs.max())
         return (price - h1w) / h1w
-    except Exception:
+    except Exception as exc:
+        log.debug("[%s] 1w-high computation failed: %s", ticker, exc)
         return None
 
 
@@ -246,7 +247,8 @@ def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str,
                     result[key] = None
 
         return result
-    except Exception:
+    except Exception as exc:
+        log.debug("[%s] returns computation failed: %s", ticker, exc)
         return {}
 
 
@@ -292,7 +294,8 @@ def _compute_typical_pullback(ticker: str, hist: pd.DataFrame | None = None) -> 
             troughs.append(cur_min)
 
         return abs(float(np.median(troughs))) if troughs else None
-    except Exception:
+    except Exception as exc:
+        log.debug("[%s] typical-pullback computation failed: %s", ticker, exc)
         return None
 
 
@@ -312,7 +315,8 @@ def _compute_dilution_rate(t: yf.Ticker) -> float | None:
         if len(vals) < 2:
             return None
         return (vals[0] - vals[1]) / vals[1]
-    except Exception:
+    except Exception as exc:
+        log.debug("dilution-rate computation failed: %s", exc)
         return None
 
 
@@ -325,7 +329,8 @@ def _compute_earnings_dates(t: yf.Ticker, limit: int = 12) -> list[str]:
         if df is None or df.empty:
             return []
         return sorted(d.strftime("%Y-%m-%d") for d in df.index if pd.notna(d))
-    except Exception:
+    except Exception as exc:
+        log.debug("earnings-dates fetch failed: %s", exc)
         return []
 
 
@@ -340,14 +345,15 @@ def _compute_earnings_beat_rate(t: yf.Ticker, quarters: int = 4) -> float | None
         recent = df.tail(quarters)
         vals = [
             (a, e)
-            for a, e in zip(recent["epsActual"], recent["epsEstimate"])
+            for a, e in zip(recent["epsActual"], recent["epsEstimate"], strict=False)
             if pd.notna(a) and pd.notna(e)
         ]
         if not vals:
             return None
         beats = sum(1 for a, e in vals if a > e)
         return beats / len(vals)
-    except Exception:
+    except Exception as exc:
+        log.debug("earnings-beat-rate computation failed: %s", exc)
         return None
 
 
@@ -363,7 +369,8 @@ def _compute_eps_estimate_revision(t: yf.Ticker) -> tuple[float | None, float | 
         current = _f(row.get("current"))
         ago_90d = _f(row.get("90daysAgo"))
         return current, ago_90d
-    except Exception:
+    except Exception as exc:
+        log.debug("eps-estimate-revision fetch failed: %s", exc)
         return None, None
 
 
@@ -376,7 +383,8 @@ def _fetch_fx_rate(from_ccy: str | None, to_ccy: str | None) -> float | None:
         fi = yf.Ticker(f"{from_ccy}{to_ccy}=X").fast_info
         rate = fi.get("lastPrice") if hasattr(fi, "get") else fi.last_price
         return float(rate) if rate else None
-    except Exception:
+    except Exception as exc:
+        log.debug("fx-rate fetch %s->%s failed: %s", from_ccy, to_ccy, exc)
         return None
 
 
@@ -394,8 +402,8 @@ def _fetch_recommendation_counts(t: yf.Ticker) -> dict:
                     "rec_sell": int(row.get("sell", 0)),
                     "rec_strong_sell": int(row.get("strongSell", 0)),
                 }
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("recommendation-counts fetch failed: %s", exc)
     return {}
 
 
@@ -509,7 +517,6 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "recommendation_mean": _f(info.get("recommendationMean")),
         "recommendation_key": info.get("recommendationKey"),
         **_rec_counts,
-        # Options
         "price_suspect": price_suspect,
         "returns": returns,
         "insider_transactions": [],
@@ -526,7 +533,6 @@ def fetch_portfolio_price(ticker: str, hist: pd.DataFrame | None = None) -> dict
     info = yf.Ticker(ticker).info or {}
     price = _f(info.get("currentPrice") or info.get("regularMarketPrice"))
     day_change_pct = _f(info.get("regularMarketChangePercent"))
-    week52_high = _f(info.get("fiftyTwoWeekHigh"))
     return_12m = _f(info.get("52WeekChange") or info.get("fiftyTwoWeekChange"))
 
     return_1w = None
@@ -556,7 +562,8 @@ def fetch_fundamentals(ticker: str) -> list[tuple[str, dict]]:
             if df is None:
                 return None
             return df if not df.empty else None
-        except Exception:
+        except Exception as exc:
+            log.debug("[%s] fundamentals dataframe '%s' unavailable: %s", ticker, attr, exc)
             return None
 
     def _first(*attrs: str) -> pd.DataFrame | None:
