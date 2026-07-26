@@ -13,8 +13,9 @@ def build_payload(
     snap: dict,
     funds: list[dict],
     refreshed_at: str | None = None,
+    week_ago_scores: dict | None = None,
 ) -> dict:
-    from core.scorers.composite import compute_all
+    from core.scorers.composite import compute_all, diff_scores
 
     current_year = str(date.today().year)
     annuals     = [f for f in funds if f.get("type") == "annual" and f.get("period") != current_year][:4]
@@ -28,6 +29,7 @@ def build_payload(
     except Exception as exc:
         log.warning("[%s] score computation failed: %s", ticker, exc)
         scores = None
+    score_change = diff_scores(week_ago_scores, scores) if scores is not None else None
     return {
         "snapshot":             snap_data,
         "returns":              snap.get("returns", {}),
@@ -35,6 +37,7 @@ def build_payload(
         "quarterlies":          [{"period": f["period"], **{k: v for k, v in f.items() if k not in ("type", "period")}} for f in quarterlies],
         "insider_transactions": snap.get("insider_transactions", []),
         "scores":               scores,
+        "score_change":         score_change,
         "refreshed_at":         refreshed_at,
         "data_ready":           len(quarterlies) >= 2,
     }

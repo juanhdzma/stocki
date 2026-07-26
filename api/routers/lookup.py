@@ -2,14 +2,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time as _time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.cache import (
-    get_session, read_snapshot, read_all_fundamentals,
+    get_session, read_snapshot, read_all_fundamentals, read_score_history_reference,
     write_snapshot, write_fundamentals, has_fundamentals,
 )
 from db.models import MarketSnapshot
@@ -92,8 +92,11 @@ async def lookup_ticker(ticker: str, session: AsyncSession = Depends(get_session
         snap = await read_snapshot(session, ticker) or {}
         refreshed_at = cached_refreshed_at
 
-    funds   = await read_all_fundamentals(session, ticker)
-    payload = build_payload(ticker, snap, funds, refreshed_at)
+    funds = await read_all_fundamentals(session, ticker)
+    today    = datetime.now(timezone.utc).date().isoformat()
+    week_ago = (datetime.now(timezone.utc).date() - timedelta(days=7)).isoformat()
+    week_ago_scores = await read_score_history_reference(session, ticker, week_ago, today)
+    payload = build_payload(ticker, snap, funds, refreshed_at, week_ago_scores)
 
     if not payload["snapshot"].get("price"):
         raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
