@@ -30,7 +30,7 @@ def linreg_slope(values: list[float]) -> float:
     den = sum((x - mx) ** 2 for x in xs)
     if not den:
         return 0.0
-    num = sum((x - mx) * (y - my) for x, y in zip(xs, values))
+    num = sum((x - mx) * (y - my) for x, y in zip(xs, values, strict=True))
     return num / den
 
 
@@ -51,9 +51,15 @@ def latest_quarters(funds: list[dict], n: int = 4) -> list[dict]:
 
 
 def ttm(funds: list[dict], field: str) -> float | None:
+    """Trailing-twelve-month total = a 4-quarter-equivalent sum. With fewer than 4
+    quarters populated, annualize from what's present so a partial year isn't treated
+    as a full one (a raw partial sum understates burn/flow — e.g. cash_runway divides
+    the TTM by 4 to get quarterly burn)."""
     quarters = latest_quarters(funds, 4)
     values = [q[field] for q in quarters if q.get(field) is not None]
-    return sum(values) if values else None
+    if not values:
+        return None
+    return sum(values) / len(values) * 4
 
 
 def finalize_score(

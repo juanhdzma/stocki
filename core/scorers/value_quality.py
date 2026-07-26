@@ -31,16 +31,16 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     roe = snapshot.get("roe")
     roa = snapshot.get("roa")
     net_m = snapshot.get("net_margin")
-    pts, cnt = 0.0, 0
+    pts, avail = 0.0, 0.0
     if roe is not None:
         pts += 8 if roe >= 0.20 else (6 if roe >= 0.10 else (3 if roe >= 0 else 0))
-        cnt += 1
+        avail += 8
     if roa is not None:
         if is_financial:
             pts += 6 if roa >= 0.015 else (4 if roa >= 0.008 else (2 if roa >= 0 else 0))
         else:
             pts += 6 if roa >= 0.10 else (4 if roa >= 0.05 else (2 if roa >= 0 else 0))
-        cnt += 1
+        avail += 6
     if net_m is not None:
         # A net margin that wildly outpaces operating margin usually means a one-off gain
         # (asset sale, warrant/equity revaluation, tax benefit) is masking a core business
@@ -53,8 +53,11 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
             if effective_net_m >= 0.15
             else (4 if effective_net_m >= 0.05 else (2 if effective_net_m >= 0 else 0))
         )
-        cnt += 1
-    sub["profitability"] = round(clamp(pts / (8 + 6 + 6) * 35, 0, 35), 1) if cnt else None
+        avail += 6
+    # Normalize by the max achievable from the metrics actually present (not the fixed
+    # all-three max) so a company reporting only some of ROE/ROA/net_margin isn't capped
+    # below the axis ceiling — same available-coverage convention as finalize_score.
+    sub["profitability"] = round(clamp(pts / avail * 35, 0, 35), 1) if avail else None
 
     # 2. Cash position (0-15) — branches on whether the company is actually burning cash
     # (ttm_fcf < 0), not on GAAP profitability, so pre-revenue companies (whose net_margin
@@ -128,12 +131,12 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
         xs = list(range(n))
         mean_x = (n - 1) / 2
         mean_y = sum(margins) / n
-        num = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, margins))
+        num = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, margins, strict=True))
         den = sum((x - mean_x) ** 2 for x in xs)
         raw_slope = num / den if den else 0.0
         trend = raw_slope / abs(mean_y) if mean_y else 0.0
-        residuals = [y - (mean_y + raw_slope * (x - mean_x)) for x, y in zip(xs, margins)]
-        residual_cv = ((sum(r**2 for r in residuals) / n) ** 0.5) / mean_y if mean_y else None
+        residuals = [y - (mean_y + raw_slope * (x - mean_x)) for x, y in zip(xs, margins, strict=True)]
+        residual_cv = ((sum(r**2 for r in residuals) / n) ** 0.5) / abs(mean_y) if mean_y else None
         if trend < -0.03:
             sub["margin_durability"] = 3.0
         elif residual_cv is not None and residual_cv > 0.05:
@@ -169,7 +172,7 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     # where leverage is the product, not a risk signal; interest coverage still applies to all
     ttm_ebit = ttm(fundamentals, "ebit")
     ttm_int = ttm(fundamentals, "interest_expense")
-    pts, cnt = 0.0, 0
+    pts, avail = 0.0, 0.0
     if not is_financial:
         cur_ratio = snapshot.get("current_ratio")
         d2e = snapshot.get("debt_to_equity")
@@ -179,20 +182,21 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
                 if cur_ratio >= 2.0
                 else (5 if cur_ratio >= 1.5 else (3 if cur_ratio >= 1.0 else 0))
             )
-            cnt += 1
+            avail += 7
         if d2e is not None:
             pts += (
                 7
                 if d2e <= 50
                 else (5 if d2e <= 100 else (3 if d2e <= 200 else (1 if d2e <= 400 else 0)))
             )
-            cnt += 1
+            avail += 7
     if ttm_ebit is not None and ttm_int is not None and ttm_int != 0:
         cov = ttm_ebit / abs(ttm_int)
         pts += 6 if cov >= 5 else (4 if cov >= 3 else (2 if cov >= 1.5 else (1 if cov >= 0 else 0)))
-        cnt += 1
-    balance_sheet_max = 6 if is_financial else (7 + 7 + 6)
-    sub["balance_sheet"] = round(clamp(pts / balance_sheet_max * 25, 0, 25), 1) if cnt else None
+        avail += 6
+    # Normalize by the max achievable from the metrics present (financials skip current
+    # ratio & D/E), consistent with finalize_score's available-coverage convention.
+    sub["balance_sheet"] = round(clamp(pts / avail * 25, 0, 25), 1) if avail else None
 
     # 5. Capital discipline — dilution rate only (0-8)
     dil = snapshot.get("dilution_rate")

@@ -1328,3 +1328,62 @@ def test_fcf_yield_excluded_when_foreign_and_no_fx_rate():
     funds = [{"type": "quarterly", "fcf": 1e10}]
     result = score(funds, snap)
     assert result["sub_scores"]["fcf_yield"] is None  # can't convert -> don't mix currencies
+
+
+# ── refactor bug fixes (W1) ─────────────────────────────────────────────────────
+
+
+def test_margin_durability_noisy_negative_margins_not_scored_perfect():
+    """Loss-making, noisy margin history must NOT land the top durability score. The old
+    residual_cv divided the (positive) RMS by the signed negative mean, going negative so
+    `> 0.05` was always False -> a noisy negative history fell through to 12.0."""
+    from core.scorers.value_quality import score
+
+    funds = [
+        {"type": "annual", "period": "2022", "revenue": 1000.0, "net_income": -200.0},  # -20%
+        {"type": "annual", "period": "2023", "revenue": 1000.0, "net_income": -50.0},  # -5%
+        {"type": "annual", "period": "2024", "revenue": 1000.0, "net_income": -200.0},  # -20%
+    ]
+    result = score(funds, {})
+    assert result["sub_scores"]["margin_durability"] == 7.0  # was 12.0 before the fix
+
+
+def test_profitability_partial_coverage_not_capped_below_axis():
+    """A company reporting only ROE (and nothing else) that scores it fully should reach the
+    profitability ceiling, not be capped by dividing through the all-three-metrics max."""
+    from core.scorers.value_quality import score
+
+    result = score([], {"roe": 0.25})
+    assert result["sub_scores"]["profitability"] == 35.0  # was 14.0 (8/20*35) before the fix
+
+
+def test_valuation_partial_coverage_not_capped_below_axis():
+    from core.scorers.price_long import score
+
+    result = score([], {"peg_ratio": 0.8})
+    assert result["sub_scores"]["valuation"] == 20.0  # was 6.2 (8/26*20) before the fix
+
+
+def test_ttm_annualizes_partial_year():
+    """Fewer than 4 populated quarters must annualize, not return a raw partial sum, so
+    downstream per-quarter math (cash_runway divides TTM by 4) stays correct."""
+    from core.scorers.base import ttm
+
+    funds = [
+        {"type": "quarterly", "fcf": -50.0},
+        {"type": "quarterly", "fcf": -50.0},
+    ]
+    assert ttm(funds, "fcf") == -200.0  # -100/2*4, was -100 before the fix
+
+
+def test_cyclical_surge_counts_zero_revenue_down_year():
+    """A legitimately reported revenue==0 year is a real down-year and must not be dropped by
+    a truthiness filter, which would hide the cycle."""
+    from core.scorers.composite import _is_cyclical_surge
+
+    funds = [
+        {"type": "annual", "period": "2022", "revenue": 100.0},
+        {"type": "annual", "period": "2023", "revenue": 0.0},
+        {"type": "annual", "period": "2024", "revenue": 120.0},
+    ]
+    assert _is_cyclical_surge(funds, {"revenue_growth": 0.5}) is True

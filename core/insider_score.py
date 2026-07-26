@@ -434,7 +434,7 @@ def compute_insider_score(
         final = 50.0 - min(50.0, bear_power / _MAX_ONE_SIDE * 50.0)
     else:
         total = bull_power + bear_power
-        final = (bull_power / total) * 100.0
+        final = (bull_power / total) * 100.0 if total else 50.0
 
     return {
         "score": round(max(0.0, min(100.0, final)), 1),

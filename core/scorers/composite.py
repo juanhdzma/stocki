@@ -275,7 +275,7 @@ def _is_cyclical_surge(fundamentals: list[dict], snapshot: dict) -> bool:
     rev_g = snapshot.get("revenue_growth")
     if rev_g is None or rev_g < 0.40:
         return False
-    revs = [a["revenue"] for a in all_annual(fundamentals) if a.get("revenue")]
+    revs = [a["revenue"] for a in all_annual(fundamentals) if a.get("revenue") is not None]
     if len(revs) < 3:
         return False
     chron = revs[::-1]  # oldest → newest

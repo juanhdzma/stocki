@@ -48,19 +48,21 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     peg = snapshot.get("peg_ratio")
     ps = snapshot.get("price_to_sales")
     rev_g = snapshot.get("revenue_growth")
-    pts, cnt = 0.0, 0
+    pts, avail = 0.0, 0.0
     if fwd_pe and trl_pe and fwd_pe > 0 and trl_pe > 0:
         ratio = trl_pe / fwd_pe  # > 1 means earnings expected to grow
         pts += clamp((ratio - 1) / 0.20, 0, 1) * 6 + (6 if ratio > 1 else 0)
-        cnt += 1
+        avail += 12
     if peg is not None and peg > 0:
         pts += 8 if peg < 1.0 else (5 if peg < 1.5 else (2 if peg < 2.5 else 0))
-        cnt += 1
+        avail += 8
     if ps is not None and rev_g is not None and not fx_mismatch:
         adj_ps = ps / (1 + rev_g) if rev_g > -1 else ps
         pts += 6 if adj_ps < 2 else (4 if adj_ps < 5 else (2 if adj_ps < 10 else 0))
-        cnt += 1
-    sub["valuation"] = round(clamp(pts / (12 + 8 + 6) * 20, 0, 20), 1) if cnt else None
+        avail += 6
+    # Normalize by the max achievable from the metrics present (not the fixed all-three
+    # max), consistent with finalize_score's available-coverage convention.
+    sub["valuation"] = round(clamp(pts / avail * 20, 0, 20), 1) if avail else None
 
     # 5. Analyst conviction — bull vs bear distribution (0-8)
     sb = snapshot.get("rec_strong_buy", 0) or 0
