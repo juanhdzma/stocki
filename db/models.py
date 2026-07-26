@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from sqlalchemy import Float, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -56,5 +57,7 @@ class FetchTimestamp(Base):
 class ScoreHistory(Base):
     __tablename__ = "score_history"
     ticker: Mapped[str] = mapped_column(String(20), primary_key=True)
-    date: Mapped[str] = mapped_column(String(10), primary_key=True)  # YYYY-MM-DD, one row per ticker per day
+    date: Mapped[str] = mapped_column(
+        String(10), primary_key=True
+    )  # YYYY-MM-DD, one row per ticker per day
     data_json: Mapped[str] = mapped_column(Text)  # compute_all() output

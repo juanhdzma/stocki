@@ -1,37 +1,48 @@
 from __future__ import annotations
+
 import asyncio
+import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select, nullsfirst
+from sqlalchemy import nullsfirst, select
 
-import json
-
-from db.cache import (
-    AsyncSessionLocal, write_snapshot, write_fundamentals, has_fundamentals,
-    should_fetch, set_last_fetch, get_last_fetch, read_snapshot, read_all_fundamentals,
-    write_score_history_if_missing,
-)
-from db.models import Watchlist, MarketSnapshot, PortfolioHolding, PortfolioPrice
-from core.fetchers.yahoo import (
-    fetch_market_snapshot, fetch_fundamentals, fetch_portfolio_price,
-    fetch_earnings_dates, batch_download_history, init_auth,
-)
 from core.fetchers.openinsider import fetch_insider_transactions
+from core.fetchers.yahoo import (
+    batch_download_history,
+    fetch_earnings_dates,
+    fetch_fundamentals,
+    fetch_market_snapshot,
+    fetch_portfolio_price,
+    init_auth,
+)
 from core.scorers.composite import compute_all
+from db.cache import (
+    AsyncSessionLocal,
+    get_last_fetch,
+    has_fundamentals,
+    read_all_fundamentals,
+    read_snapshot,
+    set_last_fetch,
+    should_fetch,
+    write_fundamentals,
+    write_score_history_if_missing,
+    write_snapshot,
+)
+from db.models import MarketSnapshot, PortfolioHolding, PortfolioPrice, Watchlist
 
-INSIDER_TTL      = timedelta(hours=24)
+INSIDER_TTL = timedelta(hours=24)
 FUNDAMENTALS_TTL = timedelta(days=7)
-SNAPSHOT_TTL     = timedelta(minutes=4)
-EARNINGS_TTL     = timedelta(days=14)
+SNAPSHOT_TTL = timedelta(minutes=4)
+EARNINGS_TTL = timedelta(days=14)
 
-_TZ_ET    = ZoneInfo("America/New_York")
+_TZ_ET = ZoneInfo("America/New_York")
 _TZ_PARIS = ZoneInfo("Europe/Paris")
 
 _MARKET_HOURS: dict[str, tuple[ZoneInfo, tuple[int, int], tuple[int, int]]] = {
-    "PA": (_TZ_PARIS, (9, 0),  (17, 30)),
-    "US": (_TZ_ET,   (9, 30), (16, 0)),
+    "PA": (_TZ_PARIS, (9, 0), (17, 30)),
+    "US": (_TZ_ET, (9, 30), (16, 0)),
 }
 
 log = logging.getLogger(__name__)
@@ -51,7 +62,7 @@ def _recent_periods(periods, n_quarterly: int = 2, n_annual: int = 1) -> set[str
     """The newest quarterly/annual period strings — the ones prone to being partial right
     after a report, so they get re-written (overwrite) on each fetch instead of frozen."""
     q = sorted((p for p, d in periods if d.get("type") == "quarterly"), reverse=True)
-    a = sorted((p for p, d in periods if d.get("type") == "annual"),    reverse=True)
+    a = sorted((p for p, d in periods if d.get("type") == "annual"), reverse=True)
     return set(q[:n_quarterly]) | set(a[:n_annual])
 
 
@@ -67,7 +78,7 @@ def _is_market_open(ticker: str, ts: datetime) -> bool:
 async def _should_fetch_snapshot(session, ticker: str, force: bool = False) -> bool:
     if force:
         return True
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     last = await get_last_fetch(session, ticker, "snapshot")
     if _is_market_open(ticker, now):
         return last is None or (now - last) > SNAPSHOT_TTL
@@ -138,11 +149,13 @@ async def refresh_one(ticker: str, hist=None, force: bool = False) -> None:
 
             if snapshot is not None:
                 snapshot["insider_transactions"] = (
-                    txs if txs is not None
+                    txs
+                    if txs is not None
                     else (existing.get("insider_transactions", []) if existing else [])
                 )
                 snapshot["earnings_dates"] = (
-                    earnings_dates if earnings_dates is not None
+                    earnings_dates
+                    if earnings_dates is not None
                     else (existing.get("earnings_dates", []) if existing else [])
                 )
                 await write_snapshot(session, ticker, snapshot)
@@ -181,7 +194,7 @@ async def refresh_one(ticker: str, hist=None, force: bool = False) -> None:
                     funds = await read_all_fundamentals(session, ticker)
                     scores = compute_all(funds, final_snap)
                     if scores.get("composite_long", {}).get("score") is not None:
-                        today = datetime.now(timezone.utc).date().isoformat()
+                        today = datetime.now(UTC).date().isoformat()
                         await write_score_history_if_missing(session, ticker, today, scores)
                 except Exception as exc:
                     log.warning("[%s] score history recording failed: %s", ticker, exc)
@@ -240,7 +253,9 @@ async def _refresh_all_impl(force: bool = False) -> None:
 
         batch = ordered[i : i + batch_size]
         log.info("Refresh batch %d/%d: %s", batch_num + 1, -(-len(ordered) // batch_size), batch)
-        results = await asyncio.gather(*[refresh_one(t, hist, force=force) for t in batch], return_exceptions=True)
+        results = await asyncio.gather(
+            *[refresh_one(t, hist, force=force) for t in batch], return_exceptions=True
+        )
         for ticker, res in zip(batch, results):
             if isinstance(res, Exception):
                 log.error("[%s] refresh failed: %s", ticker, res)
@@ -283,7 +298,7 @@ async def refresh_portfolio_prices() -> None:
         async def _refresh_one_price(ticker: str) -> None:
             try:
                 data = await asyncio.to_thread(fetch_portfolio_price, ticker, hist)
-                now = datetime.now(timezone.utc).isoformat()
+                now = datetime.now(UTC).isoformat()
                 async with AsyncSessionLocal() as s:
                     ins = pg_insert(PortfolioPrice).values(
                         ticker=ticker,
@@ -292,8 +307,10 @@ async def refresh_portfolio_prices() -> None:
                     )
                     stmt = ins.on_conflict_do_update(
                         index_elements=["ticker"],
-                        set_={"data_json": ins.excluded.data_json,
-                              "refreshed_at": ins.excluded.refreshed_at},
+                        set_={
+                            "data_json": ins.excluded.data_json,
+                            "refreshed_at": ins.excluded.refreshed_at,
+                        },
                     )
                     await s.execute(stmt)
                     await s.commit()

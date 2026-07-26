@@ -1,14 +1,15 @@
 from __future__ import annotations
-import os
+
 import logging
+import os
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+import numpy as np
+import pandas as pd
 import requests.exceptions
 import yfinance as yf
-import pandas as pd
-import numpy as np
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -18,9 +19,11 @@ if not hasattr(requests.exceptions, "DNSError"):
     requests.exceptions.DNSError = requests.exceptions.ConnectionError
 
 logging.getLogger("yfinance").addFilter(
-    type("_NoCurlWarning", (logging.Filter,), {
-        "filter": lambda self, r: "curl_cffi" not in r.getMessage()
-    })()
+    type(
+        "_NoCurlWarning",
+        (logging.Filter,),
+        {"filter": lambda self, r: "curl_cffi" not in r.getMessage()},
+    )()
 )
 
 log = logging.getLogger(__name__)
@@ -47,6 +50,7 @@ def init_auth() -> bool:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _f(v: Any) -> float | None:
     try:
         x = float(v)
@@ -70,8 +74,9 @@ def _period_key(ts: Any, kind: str) -> str:
         return str(ts)
 
 
-def _period_data(inc: pd.DataFrame | None, bs: pd.DataFrame | None,
-                 cf: pd.DataFrame | None, col: Any, kind: str) -> dict:
+def _period_data(
+    inc: pd.DataFrame | None, bs: pd.DataFrame | None, cf: pd.DataFrame | None, col: Any, kind: str
+) -> dict:
     def g(df, *names):
         if df is None:
             return None
@@ -83,34 +88,51 @@ def _period_data(inc: pd.DataFrame | None, bs: pd.DataFrame | None,
     revenue = g(inc, "Total Revenue", "Revenue")
     gross_profit = g(inc, "Gross Profit", "Gross profit")
     ebit = g(inc, "EBIT", "Operating Income", "Ebit")
-    net_income = g(inc, "Net Income", "Net Income Common Stockholders", "Net Income Continuous Operations")
-    rd = g(inc, "Research And Development", "Research And Development Expenses", "Research Development")
+    net_income = g(
+        inc, "Net Income", "Net Income Common Stockholders", "Net Income Continuous Operations"
+    )
+    rd = g(
+        inc, "Research And Development", "Research And Development Expenses", "Research Development"
+    )
     tax = g(inc, "Tax Provision", "Income Tax Expense", "Income Tax Expense Benefit")
     pretax = g(inc, "Pretax Income", "Income Before Tax", "Pre Tax Income")
-    interest_exp = g(inc, "Interest Expense",
-                     "Interest Expense Non Operating",
-                     "Interest Expense Operating",
-                     "Net Non Operating Interest Income Expense",
-                     "Total Other Finance Cost",
-                     "Net Interest Income")
+    interest_exp = g(
+        inc,
+        "Interest Expense",
+        "Interest Expense Non Operating",
+        "Interest Expense Operating",
+        "Net Non Operating Interest Income Expense",
+        "Total Other Finance Cost",
+        "Net Interest Income",
+    )
 
     total_assets = g(bs, "Total Assets")
     current_assets = g(bs, "Current Assets")
     current_liabilities = g(bs, "Current Liabilities")
     retained_earnings = g(bs, "Retained Earnings")
     total_debt = g(bs, "Total Debt", "Long Term Debt")
-    total_equity = g(bs, "Stockholders Equity", "Total Equity Gross Minority Interest",
-                     "Common Stock Equity")
+    total_equity = g(
+        bs, "Stockholders Equity", "Total Equity Gross Minority Interest", "Common Stock Equity"
+    )
     total_liabilities = g(bs, "Total Liabilities Net Minority Interest", "Total Liabilities")
     shares = g(bs, "Ordinary Shares Number", "Share Issued", "Common Stock")
-    cash = g(bs, "Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments",
-             "Cash And Short Term Investments")
+    cash = g(
+        bs,
+        "Cash And Cash Equivalents",
+        "Cash Cash Equivalents And Short Term Investments",
+        "Cash And Short Term Investments",
+    )
 
     fcf = g(cf, "Free Cash Flow")
-    buybacks = g(cf, "Repurchase Of Capital Stock", "Common Stock Repurchase",
-                 "Repurchase Of Common Stock", "Purchase Of Stock",
-                 "Repurchase Of Capital Stock And Equity",
-                 "Purchase Of Business")
+    buybacks = g(
+        cf,
+        "Repurchase Of Capital Stock",
+        "Common Stock Repurchase",
+        "Repurchase Of Common Stock",
+        "Purchase Of Stock",
+        "Repurchase Of Capital Stock And Equity",
+        "Purchase Of Business",
+    )
     ocf = g(cf, "Operating Cash Flow", "Cash From Operating Activities")
 
     gross_margin = (gross_profit / revenue) if (revenue and gross_profit) else None
@@ -143,6 +165,7 @@ def _period_data(inc: pd.DataFrame | None, bs: pd.DataFrame | None,
 
 # ── Bulk price download ───────────────────────────────────────────────────────
 
+
 def batch_download_history(tickers: list[str], period: str = "2y") -> pd.DataFrame:
     """Single bulk download: all tickers + SPY. Returns MultiIndex DataFrame."""
     all_syms = list(dict.fromkeys([t.upper() for t in tickers] + ["SPY"]))
@@ -158,15 +181,15 @@ def fetch_price_history(ticker: str, period: str = "1y") -> list[dict]:
     if isinstance(closes, pd.DataFrame):
         closes = closes[ticker] if ticker in closes.columns else closes.iloc[:, 0]
     closes = closes.dropna()
-    return [
-        {"date": ts.strftime("%Y-%m-%d"), "close": float(v)}
-        for ts, v in closes.items()
-    ]
+    return [{"date": ts.strftime("%Y-%m-%d"), "close": float(v)} for ts, v in closes.items()]
 
 
 # ── 1W high ───────────────────────────────────────────────────────────────────
 
-def _compute_1w_pct(ticker: str, price: float | None, hist: pd.DataFrame | None = None) -> float | None:
+
+def _compute_1w_pct(
+    ticker: str, price: float | None, hist: pd.DataFrame | None = None
+) -> float | None:
     try:
         if hist is not None and not hist.empty:
             highs_all = hist["High"]
@@ -191,12 +214,15 @@ def _compute_1w_pct(ticker: str, price: float | None, hist: pd.DataFrame | None 
 
 # ── Price returns vs SPY ──────────────────────────────────────────────────────
 
+
 def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str, float | None]:
     try:
         if hist is not None and not hist.empty:
             closes = hist["Close"]
         else:
-            raw = yf.download([ticker, "SPY"], period="2y", interval="1d", auto_adjust=True, progress=False)
+            raw = yf.download(
+                [ticker, "SPY"], period="2y", interval="1d", auto_adjust=True, progress=False
+            )
             closes = raw["Close"]
             if isinstance(closes, pd.Series):
                 closes = closes.to_frame(name=ticker)
@@ -208,7 +234,9 @@ def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str,
             for sym in [ticker, "SPY"]:
                 key = f"ticker_return_{label}" if sym == ticker else f"spy_return_{label}"
                 try:
-                    series = closes[sym].dropna() if sym in closes.columns else pd.Series(dtype=float)
+                    series = (
+                        closes[sym].dropna() if sym in closes.columns else pd.Series(dtype=float)
+                    )
                     if len(series) > days:
                         r = (series.iloc[-1] - series.iloc[-days]) / series.iloc[-days]
                         result[key] = float(r)
@@ -223,6 +251,7 @@ def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str,
 
 
 # ── Typical pullback depth (for buy_target) ──────────────────────────────────
+
 
 def _compute_typical_pullback(ticker: str, hist: pd.DataFrame | None = None) -> float | None:
     """Median depth of this ticker's own peak-to-trough drawdown episodes (≥5%) over 2y.
@@ -269,6 +298,7 @@ def _compute_typical_pullback(ticker: str, hist: pd.DataFrame | None = None) -> 
 
 # ── Dilution rate (YoY shares change) ────────────────────────────────────────
 
+
 def _compute_dilution_rate(t: yf.Ticker) -> float | None:
     try:
         bs = t.balance_sheet
@@ -288,6 +318,7 @@ def _compute_dilution_rate(t: yf.Ticker) -> float | None:
 
 # ── Earnings dates ────────────────────────────────────────────────────────────
 
+
 def _compute_earnings_dates(t: yf.Ticker, limit: int = 12) -> list[str]:
     try:
         df = t.get_earnings_dates(limit=limit)
@@ -300,14 +331,18 @@ def _compute_earnings_dates(t: yf.Ticker, limit: int = 12) -> list[str]:
 
 # ── Earnings execution track record ───────────────────────────────────────────
 
+
 def _compute_earnings_beat_rate(t: yf.Ticker, quarters: int = 4) -> float | None:
     try:
         df = t.earnings_history
         if df is None or df.empty:
             return None
         recent = df.tail(quarters)
-        vals = [(a, e) for a, e in zip(recent["epsActual"], recent["epsEstimate"])
-                if pd.notna(a) and pd.notna(e)]
+        vals = [
+            (a, e)
+            for a, e in zip(recent["epsActual"], recent["epsEstimate"])
+            if pd.notna(a) and pd.notna(e)
+        ]
         if not vals:
             return None
         beats = sum(1 for a, e in vals if a > e)
@@ -317,6 +352,7 @@ def _compute_earnings_beat_rate(t: yf.Ticker, quarters: int = 4) -> float | None
 
 
 # ── Analyst estimate revisions ────────────────────────────────────────────────
+
 
 def _compute_eps_estimate_revision(t: yf.Ticker) -> tuple[float | None, float | None]:
     try:
@@ -352,10 +388,10 @@ def _fetch_recommendation_counts(t: yf.Ticker) -> dict:
             if not cur.empty:
                 row = cur.iloc[0]
                 return {
-                    "rec_strong_buy":  int(row.get("strongBuy",  0)),
-                    "rec_buy":         int(row.get("buy",        0)),
-                    "rec_hold":        int(row.get("hold",       0)),
-                    "rec_sell":        int(row.get("sell",       0)),
+                    "rec_strong_buy": int(row.get("strongBuy", 0)),
+                    "rec_buy": int(row.get("buy", 0)),
+                    "rec_hold": int(row.get("hold", 0)),
+                    "rec_sell": int(row.get("sell", 0)),
                     "rec_strong_sell": int(row.get("strongSell", 0)),
                 }
     except Exception:
@@ -364,6 +400,7 @@ def _fetch_recommendation_counts(t: yf.Ticker) -> dict:
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict:
     t = yf.Ticker(ticker)
@@ -412,66 +449,68 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
 
     return {
         # Price & market
-        "name":                       info.get("longName") or info.get("shortName"),
-        "price":                      price,
-        "market_cap":                 market_cap,
-        "enterprise_value":           _f(info.get("enterpriseValue")),
-        "week52_low":                 _f(info.get("fiftyTwoWeekLow")),
-        "week52_high":                week52_high,
-        "pct_from_52w_high":          pct_from_52w_high,
-        "pct_from_1w_high":           pct_from_1w_high,
-        "typical_pullback_pct":       typical_pullback_pct,
-        "day_change_pct":             day_change_pct,
-        "ath":                        ath,
-        "beta":                       _f(info.get("beta")),
-        "average_volume":             _f(info.get("averageVolume")),
-        "shares_outstanding":         _f(info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")),
-        "sector":                     info.get("sector"),
-        "industry":                   info.get("industry"),
-        "currency":                   info.get("currency"),
-        "financial_currency":         info.get("financialCurrency"),
+        "name": info.get("longName") or info.get("shortName"),
+        "price": price,
+        "market_cap": market_cap,
+        "enterprise_value": _f(info.get("enterpriseValue")),
+        "week52_low": _f(info.get("fiftyTwoWeekLow")),
+        "week52_high": week52_high,
+        "pct_from_52w_high": pct_from_52w_high,
+        "pct_from_1w_high": pct_from_1w_high,
+        "typical_pullback_pct": typical_pullback_pct,
+        "day_change_pct": day_change_pct,
+        "ath": ath,
+        "beta": _f(info.get("beta")),
+        "average_volume": _f(info.get("averageVolume")),
+        "shares_outstanding": _f(
+            info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+        ),
+        "sector": info.get("sector"),
+        "industry": info.get("industry"),
+        "currency": info.get("currency"),
+        "financial_currency": info.get("financialCurrency"),
         # FX rate financial_currency -> price currency, so scores can convert local-currency
         # fundamentals (FCF) into the price currency instead of dropping the signal entirely.
-        "fx_rate":                    _fetch_fx_rate(info.get("financialCurrency"), info.get("currency")),
+        "fx_rate": _fetch_fx_rate(info.get("financialCurrency"), info.get("currency")),
         # Valuation multiples (current)
-        "trailing_pe":                _f(info.get("trailingPE")),
-        "forward_pe":                 _f(info.get("forwardPE")),
-        "peg_ratio":                  _f(info.get("pegRatio")),
-        "eps_ttm":                    _f(info.get("trailingEps")),
-        "price_to_sales":             _f(info.get("priceToSalesTrailing12Months")),
-        "ev_to_revenue":              _f(info.get("enterpriseToRevenue")),
+        "trailing_pe": _f(info.get("trailingPE")),
+        "forward_pe": _f(info.get("forwardPE")),
+        "peg_ratio": _f(info.get("pegRatio")),
+        "eps_ttm": _f(info.get("trailingEps")),
+        "price_to_sales": _f(info.get("priceToSalesTrailing12Months")),
+        "ev_to_revenue": _f(info.get("enterpriseToRevenue")),
         # Margins & returns (current)
-        "gross_margin":               _f(info.get("grossMargins")),
-        "operating_margin":           _f(info.get("operatingMargins")),
-        "net_margin":                 _f(info.get("profitMargins")),
-        "roe":                        _f(info.get("returnOnEquity")),
-        "roa":                        _f(info.get("returnOnAssets")),
+        "gross_margin": _f(info.get("grossMargins")),
+        "operating_margin": _f(info.get("operatingMargins")),
+        "net_margin": _f(info.get("profitMargins")),
+        "roe": _f(info.get("returnOnEquity")),
+        "roa": _f(info.get("returnOnAssets")),
         # Growth (YoY)
-        "revenue_growth":             _f(info.get("revenueGrowth")),
-        "earnings_growth":            _f(info.get("earningsGrowth")),
-        "dilution_rate":              dilution_rate,
-        "earnings_beat_rate":         earnings_beat_rate,
-        "eps_estimate_curr_fy":       eps_estimate_curr_fy,
+        "revenue_growth": _f(info.get("revenueGrowth")),
+        "earnings_growth": _f(info.get("earningsGrowth")),
+        "dilution_rate": dilution_rate,
+        "earnings_beat_rate": earnings_beat_rate,
+        "eps_estimate_curr_fy": eps_estimate_curr_fy,
         "eps_estimate_curr_fy_90d_ago": eps_estimate_curr_fy_90d_ago,
         # Liquidity & leverage (current)
-        "current_ratio":              _f(info.get("currentRatio")),
-        "quick_ratio":                _f(info.get("quickRatio")),
-        "debt_to_equity":             _f(info.get("debtToEquity")),
+        "current_ratio": _f(info.get("currentRatio")),
+        "quick_ratio": _f(info.get("quickRatio")),
+        "debt_to_equity": _f(info.get("debtToEquity")),
         # Ownership
-        "held_pct_insiders":          _f(info.get("heldPercentInsiders")),
-        "held_pct_institutions":      _f(info.get("heldPercentInstitutions")),
-        "short_percent_of_float":     _f(info.get("shortPercentOfFloat")),
-        "short_ratio":                _f(info.get("shortRatio")),
+        "held_pct_insiders": _f(info.get("heldPercentInsiders")),
+        "held_pct_institutions": _f(info.get("heldPercentInstitutions")),
+        "short_percent_of_float": _f(info.get("shortPercentOfFloat")),
+        "short_ratio": _f(info.get("shortRatio")),
         # Analyst
-        "target_low":                 _f(info.get("targetLowPrice")),
-        "target_mean":                _f(info.get("targetMeanPrice")),
-        "target_high":                _f(info.get("targetHighPrice")),
-        "analyst_count":              _f(info.get("numberOfAnalystOpinions")),
-        "recommendation_mean":        _f(info.get("recommendationMean")),
-        "recommendation_key":         info.get("recommendationKey"),
+        "target_low": _f(info.get("targetLowPrice")),
+        "target_mean": _f(info.get("targetMeanPrice")),
+        "target_high": _f(info.get("targetHighPrice")),
+        "analyst_count": _f(info.get("numberOfAnalystOpinions")),
+        "recommendation_mean": _f(info.get("recommendationMean")),
+        "recommendation_key": info.get("recommendationKey"),
         **_rec_counts,
         # Options
-        "price_suspect":  price_suspect,
+        "price_suspect": price_suspect,
         "returns": returns,
         "insider_transactions": [],
         "earnings_dates": [],
@@ -485,10 +524,10 @@ def fetch_earnings_dates(ticker: str) -> list[str]:
 def fetch_portfolio_price(ticker: str, hist: pd.DataFrame | None = None) -> dict:
     """Lightweight price-only fetch for portfolio. No fundamentals, no scores."""
     info = yf.Ticker(ticker).info or {}
-    price          = _f(info.get("currentPrice") or info.get("regularMarketPrice"))
+    price = _f(info.get("currentPrice") or info.get("regularMarketPrice"))
     day_change_pct = _f(info.get("regularMarketChangePercent"))
-    week52_high    = _f(info.get("fiftyTwoWeekHigh"))
-    return_12m     = _f(info.get("52WeekChange") or info.get("fiftyTwoWeekChange"))
+    week52_high = _f(info.get("fiftyTwoWeekHigh"))
+    return_12m = _f(info.get("52WeekChange") or info.get("fiftyTwoWeekChange"))
 
     return_1w = None
     if hist is not None and not hist.empty and ticker in hist["Close"].columns:
@@ -500,10 +539,10 @@ def fetch_portfolio_price(ticker: str, hist: pd.DataFrame | None = None) -> dict
             pass
 
     return {
-        "price":          price,
+        "price": price,
         "day_change_pct": day_change_pct,
-        "return_1w":      return_1w,
-        "return_12m":     return_12m,
+        "return_1w": return_1w,
+        "return_12m": return_12m,
     }
 
 
@@ -528,11 +567,11 @@ def fetch_fundamentals(ticker: str) -> list[tuple[str, dict]]:
         return None
 
     q_inc = _first("quarterly_income_stmt", "quarterly_financials")
-    q_bs  = _safe_df("quarterly_balance_sheet")
-    q_cf  = _safe_df("quarterly_cashflow")
+    q_bs = _safe_df("quarterly_balance_sheet")
+    q_cf = _safe_df("quarterly_cashflow")
     a_inc = _first("income_stmt", "financials")
-    a_bs  = _safe_df("balance_sheet")
-    a_cf  = _safe_df("cashflow")
+    a_bs = _safe_df("balance_sheet")
+    a_cf = _safe_df("cashflow")
 
     results: list[tuple[str, dict]] = []
 

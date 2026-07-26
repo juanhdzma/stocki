@@ -115,7 +115,7 @@ Each scorer builds a `sub` dict of raw sub-score values and a matching `max_pts`
 - Filters: min trade value by market cap ($5K–$50K), excludes S+OE with ΔOwn ≥ −10%, excludes routine sellers (CV < 0.30 and mean interval 5–35d → 80% discount)
 - 10% beneficial owners get additional 50% bear discount
 - Cluster bonus: 3+ insiders buying within 30d → +12 pts; 5+ → +25 pts
-- Returns `50.0` when `valid_buys + valid_sells == 0` after filtering (neutral, no signal)
+- Returns `50.0` (neutral) at this raw layer when `valid_buys + valid_sells == 0` after filtering — but the composite wrapper (`composite.py::_insider`) overrides that to `None` (excluded from the weighted composite, not a permanent neutral 50), and also returns `None` when the ticker has no `insider_transactions` at all
 
 ## Color system — 5-level score scale
 

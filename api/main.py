@@ -1,15 +1,14 @@
-import logging
-import os
 import hashlib
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from api.routers import refresh, lookup, watchlist, system, portfolio, status, history
-from db.cache import init_db, engine
+from api.routers import history, lookup, portfolio, refresh, status, system, watchlist
 from core.fetchers.yahoo import init_auth
+from db.cache import engine, init_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,12 +27,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Stocki", lifespan=lifespan)
 
 app.include_router(portfolio.router, prefix="/api")
-app.include_router(refresh.router,   prefix="/api")
-app.include_router(lookup.router,    prefix="/api")
+app.include_router(refresh.router, prefix="/api")
+app.include_router(lookup.router, prefix="/api")
 app.include_router(watchlist.router, prefix="/api")
-app.include_router(system.router,    prefix="/api")
-app.include_router(status.router,    prefix="/api")
-app.include_router(history.router,   prefix="/api")
+app.include_router(system.router, prefix="/api")
+app.include_router(status.router, prefix="/api")
+app.include_router(history.router, prefix="/api")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -48,9 +47,9 @@ def _asset_version(path: str) -> str:
 
 @app.get("/")
 def root():
-    js_v  = _asset_version("static/app.js")
+    js_v = _asset_version("static/app.js")
     css_v = _asset_version("static/style.css")
     html = open("static/index.html").read()
-    html = html.replace("/static/app.js",   f"/static/app.js?v={js_v}")
+    html = html.replace("/static/app.js", f"/static/app.js?v={js_v}")
     html = html.replace("/static/style.css", f"/static/style.css?v={css_v}")
     return HTMLResponse(html)

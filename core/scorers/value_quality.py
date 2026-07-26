@@ -1,20 +1,21 @@
 from __future__ import annotations
-from .base import clamp, ttm, latest_quarters, all_annual, finalize_score, currency_mismatch
+
+from .base import all_annual, clamp, currency_mismatch, finalize_score, latest_quarters, ttm
 
 
 def score(fundamentals: list[dict], snapshot: dict) -> dict:
     sub: dict[str, float | None] = {}
     max_pts: dict[str, float] = {
-        "profitability":      35.0,
-        "balance_sheet":      25.0,
-        "capital_discipline":  8.0,
-        "cash_runway":        15.0,
-        "execution_track":    10.0,
-        "margin_durability":  12.0,
-        "earnings_quality":   10.0,
+        "profitability": 35.0,
+        "balance_sheet": 25.0,
+        "capital_discipline": 8.0,
+        "cash_runway": 15.0,
+        "execution_track": 10.0,
+        "margin_durability": 12.0,
+        "earnings_quality": 10.0,
     }
     bonus_max: dict[str, float] = {
-        "buyback_bonus":          2.0,
+        "buyback_bonus": 2.0,
         "insider_ownership_bonus": 3.0,
     }
 
@@ -27,8 +28,8 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     fx_mismatch = currency_mismatch(snapshot)
 
     # 1. Profitability quality (0-20)
-    roe   = snapshot.get("roe")
-    roa   = snapshot.get("roa")
+    roe = snapshot.get("roe")
+    roa = snapshot.get("roa")
     net_m = snapshot.get("net_margin")
     pts, cnt = 0.0, 0
     if roe is not None:
@@ -47,7 +48,11 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
         op_m = snapshot.get("operating_margin")
         suspect_net_m = op_m is not None and op_m < 0 and (net_m - op_m) > 0.20
         effective_net_m = 0.0 if suspect_net_m else net_m
-        pts += 6 if effective_net_m >= 0.15 else (4 if effective_net_m >= 0.05 else (2 if effective_net_m >= 0 else 0))
+        pts += (
+            6
+            if effective_net_m >= 0.15
+            else (4 if effective_net_m >= 0.05 else (2 if effective_net_m >= 0 else 0))
+        )
         cnt += 1
     sub["profitability"] = round(clamp(pts / (8 + 6 + 6) * 35, 0, 35), 1) if cnt else None
 
@@ -59,27 +64,37 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     # watchlist that's profitable (LMT holds ~2.5% of revenue in cash, AVGO/MU ~26-28% —
     # that's a genuine difference this used to throw away).
     latest_q = latest_quarters(fundamentals, 1)
-    cash     = latest_q[0].get("cash") if latest_q else None
-    ttm_fcf  = ttm(fundamentals, "fcf")
-    ttm_rev  = ttm(fundamentals, "revenue")
+    cash = latest_q[0].get("cash") if latest_q else None
+    ttm_fcf = ttm(fundamentals, "fcf")
+    ttm_rev = ttm(fundamentals, "revenue")
     if ttm_fcf is not None and ttm_fcf < 0 and cash is not None:
         if cash <= 0:
             sub["cash_runway"] = 0.0
         else:
             runway_q = cash / (abs(ttm_fcf) / 4)
             sub["cash_runway"] = (
-                15.0 if runway_q >= 12 else
-                12.0 if runway_q >= 8  else
-                8.0  if runway_q >= 4  else
-                4.0  if runway_q >= 2  else 0.0
+                15.0
+                if runway_q >= 12
+                else 12.0
+                if runway_q >= 8
+                else 8.0
+                if runway_q >= 4
+                else 4.0
+                if runway_q >= 2
+                else 0.0
             )
     elif cash is not None and ttm_rev:
         cushion = cash / ttm_rev
         sub["cash_runway"] = (
-            15.0 if cushion >= 0.30 else
-            12.0 if cushion >= 0.15 else
-            8.0  if cushion >= 0.05 else
-            4.0  if cushion >= 0.01 else 0.0
+            15.0
+            if cushion >= 0.30
+            else 12.0
+            if cushion >= 0.15
+            else 8.0
+            if cushion >= 0.05
+            else 4.0
+            if cushion >= 0.01
+            else 0.0
         )
     else:
         sub["cash_runway"] = None
@@ -118,7 +133,7 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
         raw_slope = num / den if den else 0.0
         trend = raw_slope / abs(mean_y) if mean_y else 0.0
         residuals = [y - (mean_y + raw_slope * (x - mean_x)) for x, y in zip(xs, margins)]
-        residual_cv = ((sum(r ** 2 for r in residuals) / n) ** 0.5) / mean_y if mean_y else None
+        residual_cv = ((sum(r**2 for r in residuals) / n) ** 0.5) / mean_y if mean_y else None
         if trend < -0.03:
             sub["margin_durability"] = 3.0
         elif residual_cv is not None and residual_cv > 0.05:
@@ -133,14 +148,19 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     # whose operating cash flow trails its net income for a stretch is leaning on accruals
     # (revenue recognition, working-capital timing) rather than real cash generation.
     ttm_ocf = ttm(fundamentals, "operating_cash_flow")
-    ttm_ni  = ttm(fundamentals, "net_income")
+    ttm_ni = ttm(fundamentals, "net_income")
     if ttm_ni is not None and ttm_ni > 0 and ttm_ocf is not None:
         cash_ratio = ttm_ocf / ttm_ni
         sub["earnings_quality"] = (
-            10.0 if cash_ratio >= 1.2 else
-            7.0  if cash_ratio >= 0.8 else
-            4.0  if cash_ratio >= 0.5 else
-            1.0  if cash_ratio >= 0   else 0.0
+            10.0
+            if cash_ratio >= 1.2
+            else 7.0
+            if cash_ratio >= 0.8
+            else 4.0
+            if cash_ratio >= 0.5
+            else 1.0
+            if cash_ratio >= 0
+            else 0.0
         )
     else:
         sub["earnings_quality"] = None
@@ -148,19 +168,27 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     # 4. Balance sheet health (0-20) — current ratio & D/E skipped for Financial Services,
     # where leverage is the product, not a risk signal; interest coverage still applies to all
     ttm_ebit = ttm(fundamentals, "ebit")
-    ttm_int  = ttm(fundamentals, "interest_expense")
+    ttm_int = ttm(fundamentals, "interest_expense")
     pts, cnt = 0.0, 0
     if not is_financial:
         cur_ratio = snapshot.get("current_ratio")
-        d2e       = snapshot.get("debt_to_equity")
+        d2e = snapshot.get("debt_to_equity")
         if cur_ratio is not None:
-            pts += 7 if cur_ratio >= 2.0 else (5 if cur_ratio >= 1.5 else (3 if cur_ratio >= 1.0 else 0))
+            pts += (
+                7
+                if cur_ratio >= 2.0
+                else (5 if cur_ratio >= 1.5 else (3 if cur_ratio >= 1.0 else 0))
+            )
             cnt += 1
         if d2e is not None:
-            pts += 7 if d2e <= 50 else (5 if d2e <= 100 else (3 if d2e <= 200 else (1 if d2e <= 400 else 0)))
+            pts += (
+                7
+                if d2e <= 50
+                else (5 if d2e <= 100 else (3 if d2e <= 200 else (1 if d2e <= 400 else 0)))
+            )
             cnt += 1
     if ttm_ebit is not None and ttm_int is not None and ttm_int != 0:
-        cov  = ttm_ebit / abs(ttm_int)
+        cov = ttm_ebit / abs(ttm_int)
         pts += 6 if cov >= 5 else (4 if cov >= 3 else (2 if cov >= 1.5 else (1 if cov >= 0 else 0)))
         cnt += 1
     balance_sheet_max = 6 if is_financial else (7 + 7 + 6)
@@ -176,10 +204,14 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
 
     # Buyback bonus — extra credit only, doesn't penalize companies that don't buy back (0-2)
     mc = snapshot.get("market_cap") or 0
-    buybacks = [q["buybacks"] for q in latest_quarters(fundamentals, 4) if q.get("buybacks") is not None]
+    buybacks = [
+        q["buybacks"] for q in latest_quarters(fundamentals, 4) if q.get("buybacks") is not None
+    ]
     if buybacks and mc > 0 and not fx_mismatch:
         net = sum(buybacks)
-        buyback_bonus = round(clamp(abs(net) / mc / 0.02, 0, bonus_max["buyback_bonus"]), 1) if net < 0 else 0.0
+        buyback_bonus = (
+            round(clamp(abs(net) / mc / 0.02, 0, bonus_max["buyback_bonus"]), 1) if net < 0 else 0.0
+        )
     else:
         buyback_bonus = None
 
@@ -188,7 +220,9 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     # this only ever rewards high ownership, never punishes a low one.
     held_pct = snapshot.get("held_pct_insiders")
     if held_pct is not None:
-        insider_ownership_bonus = round(clamp(held_pct / 0.15, 0, 1) * bonus_max["insider_ownership_bonus"], 1)
+        insider_ownership_bonus = round(
+            clamp(held_pct / 0.15, 0, 1) * bonus_max["insider_ownership_bonus"], 1
+        )
     else:
         insider_ownership_bonus = None
 

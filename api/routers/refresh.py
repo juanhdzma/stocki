@@ -1,6 +1,8 @@
 import asyncio
+
 from fastapi import APIRouter
-from scheduler.worker import refresh_one, refresh_all
+
+from scheduler.worker import refresh_all, refresh_one
 
 router = APIRouter()
 

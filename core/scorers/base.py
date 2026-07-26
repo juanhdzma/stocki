@@ -10,7 +10,9 @@ def currency_mismatch(snapshot: dict) -> bool:
     return bool(cur and fin_cur and cur != fin_cur)
 
 
-def analyst_upside_pts(price: float | None, target_mean: float | None, max_pts: float) -> float | None:
+def analyst_upside_pts(
+    price: float | None, target_mean: float | None, max_pts: float
+) -> float | None:
     if not (price and target_mean and target_mean > 0 and price > 0):
         return None
     return clamp((target_mean - price) / price / 0.30, 0, 1) * max_pts
@@ -63,7 +65,7 @@ def finalize_score(
     available = {k: v for k, v in sub.items() if v is not None}
     if not available:
         return {"score": None, "sub_scores": sub, "max_pts": max_pts}
-    total_max      = sum(max_pts[k] for k in available)
+    total_max = sum(max_pts[k] for k in available)
     total_possible = sum(max_pts.values())
     if not total_possible or total_max / total_possible < min_coverage:
         return {"score": None, "sub_scores": sub, "max_pts": max_pts}

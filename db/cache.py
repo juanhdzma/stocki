@@ -1,19 +1,28 @@
 from __future__ import annotations
+
 import json
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, update, func
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import (
-    AsyncSession, AsyncEngine, create_async_engine, async_sessionmaker,
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
 )
 
 from config import DATABASE_URL
 from db.models import (
-    Base, FundamentalsHistory, MarketSnapshot, FetchTimestamp, Watchlist,
-    PortfolioHolding, PortfolioPrice, ScoreHistory,
+    Base,
+    FetchTimestamp,
+    FundamentalsHistory,
+    MarketSnapshot,
+    PortfolioHolding,
+    ScoreHistory,
+    Watchlist,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,11 +39,17 @@ async def init_db() -> None:
         result = await s.execute(select(Watchlist).where(Watchlist.list_type == "portfolio"))
         old_pf = result.scalars().all()
         for row in old_pf:
-            stmt = pg_insert(PortfolioHolding).values(
-                ticker=row.ticker, avg_cost=None, shares=None, added_at=row.added_at
-            ).on_conflict_do_nothing()
+            stmt = (
+                pg_insert(PortfolioHolding)
+                .values(ticker=row.ticker, avg_cost=None, shares=None, added_at=row.added_at)
+                .on_conflict_do_nothing()
+            )
             await s.execute(stmt)
-            await s.execute(update(Watchlist).where(Watchlist.ticker == row.ticker).values(list_type="watchlist"))
+            await s.execute(
+                update(Watchlist)
+                .where(Watchlist.ticker == row.ticker)
+                .values(list_type="watchlist")
+            )
         if old_pf:
             await s.commit()
 
@@ -46,6 +61,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 # ── Fundamentals ──────────────────────────────────────────────────────────────
 
+
 async def write_fundamentals(
     session: AsyncSession, ticker: str, period: str, data: dict, overwrite: bool = False
 ) -> None:
@@ -53,7 +69,7 @@ async def write_fundamentals(
         ticker=ticker,
         period=period,
         data_json=json.dumps(data),
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
     # A period first fetched right after its report can be partial (cash-flow/balance-sheet
     # rows still null while the income statement is populated); on_conflict_do_nothing would
@@ -90,7 +106,9 @@ async def read_all_fundamentals(session: AsyncSession, ticker: str) -> list[dict
     return [{"period": r.period, **json.loads(r.data_json)} for r in rows]
 
 
-async def read_all_fundamentals_batch(session: AsyncSession, tickers: list[str]) -> dict[str, list[dict]]:
+async def read_all_fundamentals_batch(
+    session: AsyncSession, tickers: list[str]
+) -> dict[str, list[dict]]:
     """Batched read_all_fundamentals — one query for many tickers instead of one query each."""
     if not tickers:
         return {}
@@ -107,11 +125,12 @@ async def read_all_fundamentals_batch(session: AsyncSession, tickers: list[str])
 
 # ── Market snapshot ───────────────────────────────────────────────────────────
 
+
 async def write_snapshot(session: AsyncSession, ticker: str, data: dict) -> None:
     stmt = pg_insert(MarketSnapshot).values(
         ticker=ticker,
         data_json=json.dumps(data),
-        refreshed_at=datetime.now(timezone.utc).isoformat(),
+        refreshed_at=datetime.now(UTC).isoformat(),
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["ticker"],
@@ -122,19 +141,26 @@ async def write_snapshot(session: AsyncSession, ticker: str, data: dict) -> None
 
 
 async def read_snapshot(session: AsyncSession, ticker: str) -> dict | None:
-    result = await session.execute(
-        select(MarketSnapshot).where(MarketSnapshot.ticker == ticker)
-    )
+    result = await session.execute(select(MarketSnapshot).where(MarketSnapshot.ticker == ticker))
     row = result.scalars().first()
     return json.loads(row.data_json) if row else None
 
 
 # ── Score history (one snapshot per ticker per day, for "change since" comparisons) ──
 
-async def write_score_history_if_missing(session: AsyncSession, ticker: str, date: str, scores: dict) -> None:
-    stmt = pg_insert(ScoreHistory).values(
-        ticker=ticker, date=date, data_json=json.dumps(scores),
-    ).on_conflict_do_nothing()
+
+async def write_score_history_if_missing(
+    session: AsyncSession, ticker: str, date: str, scores: dict
+) -> None:
+    stmt = (
+        pg_insert(ScoreHistory)
+        .values(
+            ticker=ticker,
+            date=date,
+            data_json=json.dumps(scores),
+        )
+        .on_conflict_do_nothing()
+    )
     await session.execute(stmt)
     await session.commit()
 
@@ -149,7 +175,11 @@ async def read_score_history_reference(
     """
     result = await session.execute(
         select(ScoreHistory.data_json)
-        .where(ScoreHistory.ticker == ticker, ScoreHistory.date >= since_date, ScoreHistory.date < today)
+        .where(
+            ScoreHistory.ticker == ticker,
+            ScoreHistory.date >= since_date,
+            ScoreHistory.date < today,
+        )
         .order_by(ScoreHistory.date.asc())
         .limit(1)
     )
@@ -167,9 +197,9 @@ async def read_score_history_reference_batch(
         select(
             ScoreHistory.ticker,
             ScoreHistory.data_json,
-            func.row_number().over(
-                partition_by=ScoreHistory.ticker, order_by=ScoreHistory.date.asc()
-            ).label("rn"),
+            func.row_number()
+            .over(partition_by=ScoreHistory.ticker, order_by=ScoreHistory.date.asc())
+            .label("rn"),
         )
         .where(
             ScoreHistory.ticker.in_(tickers),
@@ -178,11 +208,14 @@ async def read_score_history_reference_batch(
         )
         .subquery()
     )
-    result = await session.execute(select(ranked.c.ticker, ranked.c.data_json).where(ranked.c.rn == 1))
+    result = await session.execute(
+        select(ranked.c.ticker, ranked.c.data_json).where(ranked.c.rn == 1)
+    )
     return {row.ticker: json.loads(row.data_json) for row in result}
 
 
 # ── Fetch timestamps ──────────────────────────────────────────────────────────
+
 
 async def get_last_fetch(session: AsyncSession, ticker: str, data_type: str) -> datetime | None:
     result = await session.execute(
@@ -195,14 +228,14 @@ async def get_last_fetch(session: AsyncSession, ticker: str, data_type: str) -> 
     if not row:
         return None
     dt = datetime.fromisoformat(row.fetched_at)
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 async def set_last_fetch(session: AsyncSession, ticker: str, data_type: str) -> None:
     stmt = pg_insert(FetchTimestamp).values(
         ticker=ticker,
         data_type=data_type,
-        fetched_at=datetime.now(timezone.utc).isoformat(),
+        fetched_at=datetime.now(UTC).isoformat(),
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["ticker", "data_type"],
@@ -218,4 +251,4 @@ async def should_fetch(
     last = await get_last_fetch(session, ticker, data_type)
     if last is None:
         return True
-    return datetime.now(timezone.utc) - last > max_age
+    return datetime.now(UTC) - last > max_age

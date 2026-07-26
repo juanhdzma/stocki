@@ -1,19 +1,22 @@
 from __future__ import annotations
+
 import math
-from datetime import datetime, timezone
-from .base import clamp, all_annual
-from .fundamental_momentum import score as fm_score
-from .value_quality import score as vq_score
-from .price_long import score as pl_score
+from datetime import UTC, datetime
+
 from core.insider_score import compute_insider_score, normalize
+
+from .base import all_annual, clamp
+from .fundamental_momentum import score as fm_score
+from .price_long import score as pl_score
+from .value_quality import score as vq_score
 
 # insider_conviction now returns None (not a neutral 50) when there's no real signal, so its
 # weight only bites when there IS conviction data — which makes it worth more than the old 10%
 # it got as a permanent drag-to-middle. Quality gives up 5 pts for it: 40/45/15.
 _QUALITY_WEIGHTS_LONG = {
     "fundamental_momentum": 0.40,
-    "value_quality":        0.45,
-    "insider_conviction":   0.15,
+    "value_quality": 0.45,
+    "insider_conviction": 0.15,
 }
 
 _THRESHOLDS = [
@@ -21,12 +24,13 @@ _THRESHOLDS = [
     (60, "BUY"),
     (40, "HOLD"),
     (20, "SELL"),
-    (0,  "STRONG-SELL"),
+    (0, "STRONG-SELL"),
 ]
 
+
 def _insider(snapshot: dict) -> dict:
-    txs  = snapshot.get("insider_transactions", [])
-    mc   = snapshot.get("market_cap")
+    txs = snapshot.get("insider_transactions", [])
+    mc = snapshot.get("market_cap")
     w52l = snapshot.get("week52_low")
     w52h = snapshot.get("week52_high")
 
@@ -66,8 +70,8 @@ def _quality_score(base: dict) -> float | None:
 
 
 _PRICE_BOOST_MAX = 6.0
-_DIP_BONUS_MAX   = 10.0
-_DIP_REF_DROP     = 0.11   # beta-adjusted drop (at beta=1) that earns the full dip bonus
+_DIP_BONUS_MAX = 10.0
+_DIP_REF_DROP = 0.11  # beta-adjusted drop (at beta=1) that earns the full dip bonus
 
 
 def _dip_bonus(snapshot: dict) -> float:
@@ -76,10 +80,10 @@ def _dip_bonus(snapshot: dict) -> float:
     # dropping 5% in a day is as notable as a high-beta name dropping ~20% in a week.
     # Day-drop is weighted up (x2.2) since an equal % move in a single day is rarer
     # than over a week; whichever timeframe shows the bigger relative move wins.
-    day_pct  = snapshot.get("day_change_pct")
+    day_pct = snapshot.get("day_change_pct")
     week_ret = (snapshot.get("returns") or {}).get("ticker_return_1w")
-    day_drop  = max(-(day_pct / 100), 0.0) if day_pct  is not None else 0.0
-    week_drop = max(-week_ret,         0.0) if week_ret is not None else 0.0
+    day_drop = max(-(day_pct / 100), 0.0) if day_pct is not None else 0.0
+    week_drop = max(-week_ret, 0.0) if week_ret is not None else 0.0
     effective_drop = max(day_drop * 2.2, week_drop)
     if effective_drop <= 0:
         return 0.0
@@ -124,23 +128,26 @@ def _composite_long(base: dict, price_long: dict, snapshot: dict) -> dict:
 #      that barely moved gets almost no dip; a parabola gets a real (but capped) one.
 #   3. Falling — wait toward its 52-week low, the natural support it's dropping toward
 #      (target sits part-way between the current price and the low: CRM→~150, PLTR→~112).
-_BUY_TARGET_LOW_ZONE   = 0.08   # within this % above the 52w low → washed out → BUY
-_BUY_TARGET_FROTH_K    = 0.045  # rising: dip = this × ln(1 + run-up)
-_BUY_TARGET_FROTH_MIN  = 0.01   # even a barely-rising name gets a token dip
-_BUY_TARGET_FROTH_MAX  = 0.11   # cap the froth dip so a mega-parabola stays fillable
-_BUY_TARGET_FALL_FRAC  = 0.45   # falling: target = low + this × (price − low)
-_BUY_TARGET_FALL_MAX   = 0.06   # but never a wait deeper than this (a far-off low shouldn't overshoot)
+_BUY_TARGET_LOW_ZONE = 0.08  # within this % above the 52w low → washed out → BUY
+_BUY_TARGET_FROTH_K = 0.045  # rising: dip = this × ln(1 + run-up)
+_BUY_TARGET_FROTH_MIN = 0.01  # even a barely-rising name gets a token dip
+_BUY_TARGET_FROTH_MAX = 0.11  # cap the froth dip so a mega-parabola stays fillable
+_BUY_TARGET_FALL_FRAC = 0.45  # falling: target = low + this × (price − low)
+_BUY_TARGET_FALL_MAX = 0.06  # but never a wait deeper than this (a far-off low shouldn't overshoot)
 
 # The rising dip is scaled by the ticker's OWN typical pullback vs. a ~10% reference: a name
 # that routinely dips 25% deserves a deeper entry than one that rarely dips past 8% for the
 # same run. Bounded and centered at 1.0, so median-volatility names are unchanged (preserves
 # the calibration); no pullback history → 1.0 (no scaling).
-_BUY_TARGET_VOL_REF    = 0.10
-_BUY_TARGET_VOL_LO     = 0.70
-_BUY_TARGET_VOL_HI     = 1.40
+_BUY_TARGET_VOL_REF = 0.10
+_BUY_TARGET_VOL_LO = 0.70
+_BUY_TARGET_VOL_HI = 1.40
 
 _BUY_TARGET_TREND_KEYS = (
-    "ticker_return_12m", "ticker_return_6m", "ticker_return_3m", "ticker_return_1m",
+    "ticker_return_12m",
+    "ticker_return_6m",
+    "ticker_return_3m",
+    "ticker_return_1m",
 )
 
 
@@ -155,7 +162,7 @@ def _buy_target_trend(snapshot: dict) -> float:
 
 
 def _buy_target(snapshot: dict) -> dict | None:
-    price   = snapshot.get("price")
+    price = snapshot.get("price")
     low_52w = snapshot.get("week52_low")
     if not price or low_52w is None or low_52w <= 0:
         return None
@@ -163,29 +170,36 @@ def _buy_target(snapshot: dict) -> dict | None:
     trend = _buy_target_trend(snapshot)
 
     if (price - low_52w) / price <= _BUY_TARGET_LOW_ZONE:
-        target = price                                    # washed out at its low → buy now
-    elif trend >= 0:                                      # rising → modest dip, deeper if frothy
+        target = price  # washed out at its low → buy now
+    elif trend >= 0:  # rising → modest dip, deeper if frothy
         pull = snapshot.get("typical_pullback_pct")
-        vol_mult = clamp(pull / _BUY_TARGET_VOL_REF, _BUY_TARGET_VOL_LO, _BUY_TARGET_VOL_HI) if pull else 1.0
-        dip = clamp(_BUY_TARGET_FROTH_K * math.log1p(trend) * vol_mult,
-                    _BUY_TARGET_FROTH_MIN, _BUY_TARGET_FROTH_MAX)
+        vol_mult = (
+            clamp(pull / _BUY_TARGET_VOL_REF, _BUY_TARGET_VOL_LO, _BUY_TARGET_VOL_HI)
+            if pull
+            else 1.0
+        )
+        dip = clamp(
+            _BUY_TARGET_FROTH_K * math.log1p(trend) * vol_mult,
+            _BUY_TARGET_FROTH_MIN,
+            _BUY_TARGET_FROTH_MAX,
+        )
         target = price * (1 - dip)
-    else:                                                 # falling → toward the low, capped
+    else:  # falling → toward the low, capped
         target = low_52w + _BUY_TARGET_FALL_FRAC * (price - low_52w)
         target = max(target, price * (1 - _BUY_TARGET_FALL_MAX))
 
     return {
-        "price":             round(target, 2),
-        "pct_from_current":  round(target / price - 1, 4),
-        "signal":            "buy" if price <= target else "wait",
+        "price": round(target, 2),
+        "pct_from_current": round(target / price - 1, 4),
+        "signal": "buy" if price <= target else "wait",
     }
 
 
 _CATEGORY_LABELS = {
     "fundamental_momentum": "Growth",
-    "value_quality":        "Quality",
-    "insider_conviction":   "Insiders",
-    "price_long":           "Sentimiento",
+    "value_quality": "Quality",
+    "insider_conviction": "Insiders",
+    "price_long": "Sentimiento",
 }
 
 _MOVER_MIN_DELTA = 0.05
@@ -227,9 +241,9 @@ def diff_scores(old: dict | None, new: dict | None) -> dict | None:
 
     movers.sort(key=lambda m: -abs(m["delta"]))
     return {
-        "composite":  {"old": old_score, "new": new_score, "delta": round(new_score - old_score, 1)},
+        "composite": {"old": old_score, "new": new_score, "delta": round(new_score - old_score, 1)},
         "categories": categories,
-        "movers":     movers[:5],
+        "movers": movers[:5],
     }
 
 
@@ -241,7 +255,7 @@ _EARNINGS_SOON_DAYS = 7
 def _days_to_earnings(dates: list | None) -> int | None:
     if not dates:
         return None
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     future = []
     for ds in dates:
         try:
@@ -283,43 +297,68 @@ def _risk_flags(fundamentals: list[dict], price_long: dict, snapshot: dict) -> l
     flags: list[dict] = []
     rev_g = snapshot.get("revenue_growth")
     if rev_g is not None and rev_g < 0:
-        flags.append({"key": "rev", "label": "REV↓",
-                      "title": f"Revenue shrinking ({rev_g:+.0%} YoY) — score capped below STRONG-BUY"})
+        flags.append(
+            {
+                "key": "rev",
+                "label": "REV↓",
+                "title": f"Revenue shrinking ({rev_g:+.0%} YoY) — score capped below STRONG-BUY",
+            }
+        )
 
     if _is_cyclical_surge(fundamentals, snapshot):
-        flags.append({"key": "cyclical", "label": "CYCLICAL",
-                      "title": f"Revenue +{rev_g:.0%} off a prior down-year — likely a cycle peak, "
-                               "not durable growth (Growth score may be inflated)"})
+        flags.append(
+            {
+                "key": "cyclical",
+                "label": "CYCLICAL",
+                "title": f"Revenue +{rev_g:.0%} off a prior down-year — likely a cycle peak, "
+                "not durable growth (Growth score may be inflated)",
+            }
+        )
 
     days = _days_to_earnings(snapshot.get("earnings_dates"))
     if days is not None and days <= _EARNINGS_SOON_DAYS:
-        flags.append({"key": "earnings", "label": f"E-{days}d",
-                      "title": f"Earnings in ~{days} day(s) — event risk before any entry"})
+        flags.append(
+            {
+                "key": "earnings",
+                "label": f"E-{days}d",
+                "title": f"Earnings in ~{days} day(s) — event risk before any entry",
+            }
+        )
 
-    val  = (price_long.get("sub_scores") or {}).get("valuation")
+    val = (price_long.get("sub_scores") or {}).get("valuation")
     vmax = (price_long.get("max_pts") or {}).get("valuation")
     if val is not None and vmax and val / vmax < 0.30:
-        flags.append({"key": "expensive", "label": "$$$",
-                      "title": "Rich valuation — PE/PEG/P-S in the expensive tier"})
+        flags.append(
+            {
+                "key": "expensive",
+                "label": "$$$",
+                "title": "Rich valuation — PE/PEG/P-S in the expensive tier",
+            }
+        )
 
     if snapshot.get("price_suspect"):
-        flags.append({"key": "price", "label": "PRICE?",
-                      "title": "Quote deviates >50% from prior close — data may be wrong"})
+        flags.append(
+            {
+                "key": "price",
+                "label": "PRICE?",
+                "title": "Quote deviates >50% from prior close — data may be wrong",
+            }
+        )
     return flags
 
 
 def compute_all(fundamentals: list[dict], snapshot: dict) -> dict:
     base = {
         "fundamental_momentum": fm_score(fundamentals, snapshot),
-        "value_quality":        vq_score(fundamentals, snapshot),
-        "insider_conviction":   _insider(snapshot),
+        "value_quality": vq_score(fundamentals, snapshot),
+        "insider_conviction": _insider(snapshot),
     }
     price_long = pl_score(fundamentals, snapshot)
 
     return {
         **base,
-        "price_long":      price_long,
-        "composite_long":  _composite_long(base, price_long, snapshot),
-        "buy_target":      _buy_target(snapshot),
-        "flags":           _risk_flags(fundamentals, price_long, snapshot),
+        "price_long": price_long,
+        "composite_long": _composite_long(base, price_long, snapshot),
+        "buy_target": _buy_target(snapshot),
+        "flags": _risk_flags(fundamentals, price_long, snapshot),
     }

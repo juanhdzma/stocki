@@ -1,21 +1,27 @@
 from __future__ import annotations
+
 import asyncio
 import logging
 import time as _time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.routers._payload import _TICKER_RE, build_payload
+from core.fetchers.openinsider import fetch_insider_transactions
+from core.fetchers.yahoo import fetch_fundamentals, fetch_market_snapshot, init_auth
 from db.cache import (
-    get_session, read_snapshot, read_all_fundamentals, read_score_history_reference,
-    write_snapshot, write_fundamentals, has_fundamentals,
+    get_session,
+    has_fundamentals,
+    read_all_fundamentals,
+    read_score_history_reference,
+    read_snapshot,
+    write_fundamentals,
+    write_snapshot,
 )
 from db.models import MarketSnapshot
-from core.fetchers.yahoo import fetch_market_snapshot, fetch_fundamentals, init_auth
-from core.fetchers.openinsider import fetch_insider_transactions
-from api.routers._payload import build_payload, _TICKER_RE
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -36,8 +42,8 @@ async def _get_snapshot_info(session: AsyncSession, ticker: str) -> tuple[float 
     try:
         ts = datetime.fromisoformat(row.refreshed_at)
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - ts).total_seconds(), row.refreshed_at
+            ts = ts.replace(tzinfo=UTC)
+        return (datetime.now(UTC) - ts).total_seconds(), row.refreshed_at
     except Exception:
         return None, None
 
@@ -74,11 +80,12 @@ async def lookup_ticker(ticker: str, session: AsyncSession = Depends(get_session
 
         existing = await read_snapshot(session, ticker)
         snap["insider_transactions"] = (
-            txs if txs is not None
+            txs
+            if txs is not None
             else (existing.get("insider_transactions", []) if existing else [])
         )
         await write_snapshot(session, ticker, snap)
-        refreshed_at = datetime.now(timezone.utc).isoformat()
+        refreshed_at = datetime.now(UTC).isoformat()
 
         try:
             periods = await asyncio.to_thread(fetch_fundamentals, ticker)
@@ -93,8 +100,8 @@ async def lookup_ticker(ticker: str, session: AsyncSession = Depends(get_session
         refreshed_at = cached_refreshed_at
 
     funds = await read_all_fundamentals(session, ticker)
-    today    = datetime.now(timezone.utc).date().isoformat()
-    week_ago = (datetime.now(timezone.utc).date() - timedelta(days=7)).isoformat()
+    today = datetime.now(UTC).date().isoformat()
+    week_ago = (datetime.now(UTC).date() - timedelta(days=7)).isoformat()
     week_ago_scores = await read_score_history_reference(session, ticker, week_ago, today)
     payload = build_payload(ticker, snap, funds, refreshed_at, week_ago_scores)
 

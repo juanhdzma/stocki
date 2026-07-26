@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import json
 
@@ -7,7 +8,7 @@ from sqlalchemy import select
 
 from db.cache import AsyncSessionLocal
 from db.models import PortfolioHolding, PortfolioPrice
-from scheduler.worker import refresh_portfolio_prices, is_pf_refresh_running
+from scheduler.worker import is_pf_refresh_running, refresh_portfolio_prices
 
 router = APIRouter()
 
@@ -16,9 +17,7 @@ router = APIRouter()
 async def get_portfolio_prices():
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(PortfolioPrice).where(
-                PortfolioPrice.ticker.in_(select(PortfolioHolding.ticker))
-            )
+            select(PortfolioPrice).where(PortfolioPrice.ticker.in_(select(PortfolioHolding.ticker)))
         )
         rows = result.scalars().all()
 

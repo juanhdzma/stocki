@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import logging
 import threading
@@ -37,14 +38,14 @@ async def system_info():
         if cached is not None and now - cached[1] <= _YF_LATEST_TTL:
             return {
                 "yfinance_installed": installed,
-                "yfinance_latest":    cached[0],
-                "up_to_date":         cached[0] is None or installed == cached[0],
+                "yfinance_latest": cached[0],
+                "up_to_date": cached[0] is None or installed == cached[0],
             }
     latest = await asyncio.to_thread(_fetch_latest_yfinance)
     with _cache_lock:
         router_cache["yfinance_latest"] = (latest, now)
     return {
         "yfinance_installed": installed,
-        "yfinance_latest":    latest,
-        "up_to_date":         latest is None or installed == latest,
+        "yfinance_latest": latest,
+        "up_to_date": latest is None or installed == latest,
     }
