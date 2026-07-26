@@ -128,6 +128,14 @@ _BUY_TARGET_FROTH_MAX  = 0.11   # cap the froth dip so a mega-parabola stays fil
 _BUY_TARGET_FALL_FRAC  = 0.45   # falling: target = low + this × (price − low)
 _BUY_TARGET_FALL_MAX   = 0.06   # but never a wait deeper than this (a far-off low shouldn't overshoot)
 
+# The rising dip is scaled by the ticker's OWN typical pullback vs. a ~10% reference: a name
+# that routinely dips 25% deserves a deeper entry than one that rarely dips past 8% for the
+# same run. Bounded and centered at 1.0, so median-volatility names are unchanged (preserves
+# the calibration); no pullback history → 1.0 (no scaling).
+_BUY_TARGET_VOL_REF    = 0.10
+_BUY_TARGET_VOL_LO     = 0.70
+_BUY_TARGET_VOL_HI     = 1.40
+
 _BUY_TARGET_TREND_KEYS = (
     "ticker_return_12m", "ticker_return_6m", "ticker_return_3m", "ticker_return_1m",
 )
@@ -153,9 +161,12 @@ def _buy_target(snapshot: dict) -> dict | None:
 
     if (price - low_52w) / price <= _BUY_TARGET_LOW_ZONE:
         target = price                                    # washed out at its low → buy now
-    elif trend >= 0:
-        dip = clamp(_BUY_TARGET_FROTH_K * math.log1p(trend), _BUY_TARGET_FROTH_MIN, _BUY_TARGET_FROTH_MAX)
-        target = price * (1 - dip)                        # rising → modest dip, deeper if frothy
+    elif trend >= 0:                                      # rising → modest dip, deeper if frothy
+        pull = snapshot.get("typical_pullback_pct")
+        vol_mult = clamp(pull / _BUY_TARGET_VOL_REF, _BUY_TARGET_VOL_LO, _BUY_TARGET_VOL_HI) if pull else 1.0
+        dip = clamp(_BUY_TARGET_FROTH_K * math.log1p(trend) * vol_mult,
+                    _BUY_TARGET_FROTH_MIN, _BUY_TARGET_FROTH_MAX)
+        target = price * (1 - dip)
     else:                                                 # falling → toward the low, capped
         target = low_52w + _BUY_TARGET_FALL_FRAC * (price - low_52w)
         target = max(target, price * (1 - _BUY_TARGET_FALL_MAX))
