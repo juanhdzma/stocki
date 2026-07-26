@@ -22,7 +22,7 @@ To stop:
 docker compose down
 ```
 
-> The database is ephemeral by default — data is lost when the containers are removed. That's intentional for local dev.
+> The database lives in a named Docker volume (`stock_data`), so it survives `docker compose down` and restarts. It's wiped only by `docker compose down -v`.
 
 ## Loading tickers
 
