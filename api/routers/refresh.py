@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
+from api.routers._payload import _TICKER_RE
 from scheduler.worker import refresh_all, refresh_one, spawn_background
 
 router = APIRouter()
@@ -13,5 +14,8 @@ async def trigger_refresh_all():
 
 @router.post("/refresh/{ticker}")
 async def trigger_refresh(ticker: str):
-    await refresh_one(ticker.upper(), force=True)
-    return {"status": "ok", "ticker": ticker.upper()}
+    ticker = ticker.upper().strip()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker")
+    await refresh_one(ticker, force=True)
+    return {"status": "ok", "ticker": ticker}
