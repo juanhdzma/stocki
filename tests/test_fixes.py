@@ -1021,7 +1021,7 @@ def test_risk_flags_revenue_decline_and_price_suspect():
     from core.scorers.composite import _risk_flags
 
     pl = {"sub_scores": {"valuation": 15.0}, "max_pts": {"valuation": 20.0}}
-    flags = _risk_flags(pl, {"revenue_growth": -0.04, "price_suspect": True})
+    flags = _risk_flags([], pl, {"revenue_growth": -0.04, "price_suspect": True})
     keys = {f["key"] for f in flags}
     assert "rev" in keys and "price" in keys
 
@@ -1030,7 +1030,7 @@ def test_risk_flags_expensive_valuation():
     from core.scorers.composite import _risk_flags
 
     pl = {"sub_scores": {"valuation": 3.0}, "max_pts": {"valuation": 20.0}}  # 15% of max -> expensive
-    flags = _risk_flags(pl, {"revenue_growth": 0.2})
+    flags = _risk_flags([], pl, {"revenue_growth": 0.2})
     assert any(f["key"] == "expensive" for f in flags)
 
 
@@ -1038,4 +1038,20 @@ def test_risk_flags_none_when_healthy():
     from core.scorers.composite import _risk_flags
 
     pl = {"sub_scores": {"valuation": 18.0}, "max_pts": {"valuation": 20.0}}
-    assert _risk_flags(pl, {"revenue_growth": 0.25}) == []
+    assert _risk_flags([], pl, {"revenue_growth": 0.25}) == []
+
+
+def test_cyclical_surge_flags_recovery_off_a_trough():
+    from core.scorers.composite import _is_cyclical_surge
+
+    # MU-shape: revenue crashed (30.8 -> 15.5) then recovered, and now surging -> cyclical
+    ann = [{"type": "annual", "revenue": r} for r in (37.4, 25.1, 15.5, 30.8)]  # newest first
+    assert _is_cyclical_surge(ann, {"revenue_growth": 3.46}) is True
+
+
+def test_cyclical_surge_ignores_monotonic_hypergrowth():
+    from core.scorers.composite import _is_cyclical_surge
+
+    # NBIS/IONQ-shape: never declined YoY -> secular/hypergrowth, not cyclical
+    ann = [{"type": "annual", "revenue": r} for r in (0.5, 0.1, 0.02, 0.01)]
+    assert _is_cyclical_surge(ann, {"revenue_growth": 6.8}) is False

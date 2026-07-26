@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 from datetime import datetime, timezone
-from .base import clamp
+from .base import clamp, all_annual
 from .fundamental_momentum import score as fm_score
 from .value_quality import score as vq_score
 from .price_long import score as pl_score
@@ -239,12 +239,43 @@ def _days_to_earnings(dates: list | None) -> int | None:
     return min(future) if future else None
 
 
-def _risk_flags(price_long: dict, snapshot: dict) -> list[dict]:
+def _is_cyclical_surge(fundamentals: list[dict], snapshot: dict) -> bool:
+    """A big revenue surge coming off a prior down-year is a cyclical recovery, not durable
+    growth — the classic memory/semis trap where a name looks best right at the cycle peak.
+    A secular grower never declines YoY; a cyclical oscillates. So: surging now AND a real
+    (>10%) down-year somewhere in the annual history → treat the growth read with suspicion."""
+    rev_g = snapshot.get("revenue_growth")
+    if rev_g is None or rev_g < 0.40:
+        return False
+    revs = [a["revenue"] for a in all_annual(fundamentals) if a.get("revenue")]
+    if len(revs) < 3:
+        return False
+    chron = revs[::-1]  # oldest → newest
+    latest = chron[-1]
+    if latest <= 0:
+        return False
+    # A real cycle oscillates around a comparable level: an EARLIER year that peaked at
+    # ≥50% of today's revenue, then a LATER year fell >10% below it. This excludes early-
+    # stage noise / a one-off reset (NBIS post-divestiture) where the prior "peak" is
+    # immaterial vs. today — that's not a cycle, just a small base or a corporate action.
+    for i in range(len(chron) - 1):
+        peak = chron[i]
+        if peak >= 0.50 * latest and any(chron[j] < peak * 0.90 for j in range(i + 1, len(chron))):
+            return True
+    return False
+
+
+def _risk_flags(fundamentals: list[dict], price_long: dict, snapshot: dict) -> list[dict]:
     flags: list[dict] = []
     rev_g = snapshot.get("revenue_growth")
     if rev_g is not None and rev_g < 0:
         flags.append({"key": "rev", "label": "REV↓",
                       "title": f"Revenue shrinking ({rev_g:+.0%} YoY) — score capped below STRONG-BUY"})
+
+    if _is_cyclical_surge(fundamentals, snapshot):
+        flags.append({"key": "cyclical", "label": "CYCLICAL",
+                      "title": f"Revenue +{rev_g:.0%} off a prior down-year — likely a cycle peak, "
+                               "not durable growth (Growth score may be inflated)"})
 
     days = _days_to_earnings(snapshot.get("earnings_dates"))
     if days is not None and days <= _EARNINGS_SOON_DAYS:
@@ -276,5 +307,5 @@ def compute_all(fundamentals: list[dict], snapshot: dict) -> dict:
         "price_long":      price_long,
         "composite_long":  _composite_long(base, price_long, snapshot),
         "buy_target":      _buy_target(snapshot),
-        "flags":           _risk_flags(price_long, snapshot),
+        "flags":           _risk_flags(fundamentals, price_long, snapshot),
     }
