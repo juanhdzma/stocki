@@ -8,7 +8,7 @@ Personal stock watchlist + portfolio tracker. Fetches fundamentals, market data,
 ## Stack
 - **Backend**: FastAPI + asyncpg + SQLAlchemy (async), Python 3.12
 - **DB**: PostgreSQL 16 (Docker)
-- **Scheduler**: APScheduler (background refresh of market data)
+- **Refresh**: manual/on-demand only, triggered via the API (`POST /api/refresh*`) and run as background asyncio tasks in `scheduler/worker.py`. There is **no** running scheduler despite the module name — `apscheduler` is a leftover dep and nothing starts a timer.
 - **Frontend**: Vanilla JS + CSS, no framework
 - **Deploy**: Docker Compose → Portainer on `juanhdzma@192.168.78.250`, port 8503
 
@@ -20,7 +20,7 @@ docker compose up -d --build   # rebuild + start; code is COPYed into the image,
 docker compose down
 ```
 App at http://localhost:8503. DB is a named volume (`stock_data`) — survives `down`, wiped only by `down -v`.
-Static assets (`app.js`/`style.css`) are cache-busted by an MD5 hash computed in `api/main.py:root()`, so a plain browser refresh after rebuild is enough — no need to hard-refresh.
+Static assets are cache-busted by an MD5 hash in `api/main.py` (`_build_index_html`, cached after first request): `style.css` by its own hash, and the ES-module entry `js/main.js` by a hash of the **whole `js/` tree** (since its sibling imports carry no version query). A plain browser refresh after rebuild picks up the entry; if a change to a leaf module ever looks stale, one hard-refresh clears it.
 
 ### Run locally without Docker
 ```bash
@@ -32,7 +32,9 @@ Static assets (`app.js`/`style.css`) are cache-busted by an MD5 hash computed in
 python3 -m pytest tests/                              # all tests
 python3 -m pytest tests/test_fixes.py -k test_name     # single test
 ```
-Uses `pytest` + `pytest-asyncio` (`@pytest.mark.asyncio` on async tests) — installed in the dev environment, not listed in `requirements.txt` (runtime deps only). No linter/formatter is configured in this repo.
+Uses `pytest` + `pytest-asyncio` (`@pytest.mark.asyncio` on async tests) — installed in the dev environment, not listed in `requirements.txt` (runtime deps only).
+
+Lint/format is `ruff` (config in `pyproject.toml`): `python3 -m ruff check .` and `python3 -m ruff format .`. The format pass drops manual column-alignment, so run it on touched files at the end of a change rather than mixing it with logic edits. `E701` (compact one-liner guards/ladders) is intentionally ignored.
 
 ## Project layout
 ```
@@ -60,12 +62,19 @@ db/
   models.py                # SQLAlchemy ORM: MarketSnapshot, Watchlist, etc.
   cache.py                 # DB read/write helpers
 scheduler/
-  worker.py                # APScheduler jobs: refresh_one(), refresh_all()
+  worker.py                # refresh orchestration: refresh_one()/refresh_all()/refresh_portfolio_prices() + spawn_background(). NOT a running scheduler — see note below
 static/
-  app.js                   # all frontend logic (single file)
+  js/                      # frontend as native ES modules (loaded via <script type="module" src="js/main.js">)
+    state.js               # shared mutable `state` object (module imports are read-only, so cross-module state is routed through it)
+    format.js colors.js    # pure formatters / score-color + badge helpers
+    overlay.js charts.js   # tooltip positioning / all SVG charts
+    tooltips.js cards.js    # hover+score tooltips / detail-view render pipeline
+    tables.js api.js        # watchlist+portfolio tables / fetch wrappers
+    main.js                # stateful glue: handlers, router, window.* exports, bootstrap
   style.css
   index.html
 ```
+util.py                    # shared datetime/ticker helpers (utcnow_iso, ensure_aware, parse_iso_aware, today_and_week_ago)
 
 ## Score system
 
@@ -95,9 +104,11 @@ Each scorer builds a `sub` dict of raw sub-score values and a matching `max_pts`
 
 **Gotcha**: `max_pts[key]` must equal the actual achievable ceiling of that sub-score's own formula — not just an intended weight written down separately. If a formula's internal clamp/scale caps below (or above) its declared `max_pts`, the category score is silently capped below 100 (or that component gets over-weighted) even with ideal input data, and it's easy to miss because nothing errors. Found this in `value_quality.py`: `profitability` and `balance_sheet` were declared at 35/25 but their formulas hardcoded a `*20` scale — `value_quality` topped out around 81/100 no matter how good the inputs were.
 
+**Coverage convention inside a multi-metric sub-score**: `profitability`, `balance_sheet` (`value_quality.py`) and `valuation` (`price_long.py`) each blend several metrics (e.g. ROE/ROA/net_margin) that may be individually absent. They normalize by the sum of the *present* metrics' max points (an `avail` accumulator), not a fixed all-metrics denominator — the same available-coverage convention `finalize_score` uses across sub-scores. Normalizing by the fixed max would cap a partial-coverage company below the axis ceiling even with perfect data.
+
 **Convention — `None` vs `0.0`**: a sub-score is `None` when the metric doesn't *apply* to this company right now (e.g. `cash_runway`'s survival-runway branch when the company isn't burning cash; `earnings_quality` when net income is negative; `margin_durability` with under 3–4 years of history) — it's excluded from the weighted average, never dragging the category down. A sub-score is a real `0.0` when the metric *does* apply and the company scores at the bottom of it (e.g. a company genuinely burning cash with no runway left). Getting this backwards either hides a real risk signal as "N/A" or unfairly zeroes out a company the metric doesn't apply to.
 
-`finalize_score()` also accepts an optional `bonus` param — added *after* normalization and clamped so the total never exceeds 100. Use this for signals that should only ever help, never hurt, a score: `buyback_bonus`/`insider_ownership_bonus` in `value_quality.py`, `short_squeeze_bonus` in `price_long.py`. A company with no buybacks/low insider ownership/low short interest scores the same as before; one with the favorable trait gets added points. Multiple bonuses on one scorer just sum before the final clamp (see `value_quality.py`'s `total_bonus`). The bonus sub-score is still returned in `sub_scores` (outside the weighted `max_pts` sum) so the frontend can render it distinctly — see `bonusRow()` in `app.js`, styled apart from the normal `subScoreBar()` rows.
+`finalize_score()` also accepts an optional `bonus` param — added *after* normalization and clamped so the total never exceeds 100. Use this for signals that should only ever help, never hurt, a score: `buyback_bonus`/`insider_ownership_bonus` in `value_quality.py`, `short_squeeze_bonus` in `price_long.py`. A company with no buybacks/low insider ownership/low short interest scores the same as before; one with the favorable trait gets added points. Multiple bonuses on one scorer just sum before the final clamp (see `value_quality.py`'s `total_bonus`). The bonus sub-score is still returned in `sub_scores` (outside the weighted `max_pts` sum) so the frontend can render it distinctly — see `bonusRow()` in `static/js/tooltips.js`, styled apart from the normal `subScoreBar()` rows.
 
 ### Sub-score reference
 
@@ -129,7 +140,7 @@ Each scorer builds a `sub` dict of raw sub-score values and a matching `max_pts`
 | 4 — Good | 60–79 | `ic-l4` | `var(--s4)` | `#adde63` |
 | 5 — Very good | 80–100 | `ic-l5` | `var(--s5)` | `#00c853` |
 
-JS helpers (defined in `app.js`):
+JS helpers (defined in `static/js/colors.js`):
 - `scoreColor(s)` → CSS class for 0–100 score (`ic-l1`…`ic-l5` or `s-null`)
 - `scoreColorVar(s)` → CSS variable string for inline `style=` usage
 - `pctScoreColor(val, scale)` → CSS class for signed % values; maps ±scale to 0–100 then applies scoreColor
