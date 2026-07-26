@@ -698,7 +698,15 @@ function actionLabel(a) {
 
 function actionBadge(scores) {
   const a = scores?.composite_long?.action || "NA";
-  return `<span class="action-badge action-${a}">${actionLabel(a)}</span>`;
+  return `<span class="action-badge action-${a}">${actionLabel(a)}</span>${riskFlags(scores)}`;
+}
+
+function riskFlags(scores) {
+  const flags = scores?.flags;
+  if (!flags || !flags.length) return "";
+  return " " + flags.map(f =>
+    `<span class="risk-flag risk-${f.key}" title="${(f.title || "").replace(/"/g, "&quot;")}">${f.label}</span>`
+  ).join(" ");
 }
 
 

@@ -1015,3 +1015,27 @@ def test_insider_no_valid_trades_is_none_not_50():
                  "fcf": 8e4, "gross_margin": 0.4} for i in range(4)]
     out = compute_all(quarters, snap)
     assert out["insider_conviction"]["score"] is None
+
+
+def test_risk_flags_revenue_decline_and_price_suspect():
+    from core.scorers.composite import _risk_flags
+
+    pl = {"sub_scores": {"valuation": 15.0}, "max_pts": {"valuation": 20.0}}
+    flags = _risk_flags(pl, {"revenue_growth": -0.04, "price_suspect": True})
+    keys = {f["key"] for f in flags}
+    assert "rev" in keys and "price" in keys
+
+
+def test_risk_flags_expensive_valuation():
+    from core.scorers.composite import _risk_flags
+
+    pl = {"sub_scores": {"valuation": 3.0}, "max_pts": {"valuation": 20.0}}  # 15% of max -> expensive
+    flags = _risk_flags(pl, {"revenue_growth": 0.2})
+    assert any(f["key"] == "expensive" for f in flags)
+
+
+def test_risk_flags_none_when_healthy():
+    from core.scorers.composite import _risk_flags
+
+    pl = {"sub_scores": {"valuation": 18.0}, "max_pts": {"valuation": 20.0}}
+    assert _risk_flags(pl, {"revenue_growth": 0.25}) == []

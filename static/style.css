@@ -476,6 +476,22 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 .action-STRONG-SELL { background: rgba(255,68,68,0.15);   color: var(--s1); }
 .action-NA          { background: rgba(139,148,158,0.15); color: var(--subtext); }
 
+/* ── Risk flags (next to the action badge) ───────────────── */
+.risk-flag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+  cursor: help;
+  white-space: nowrap;
+}
+.risk-rev       { background: rgba(255,140,0,0.15);  color: var(--s2); }
+.risk-earnings  { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.risk-expensive { background: rgba(255,140,0,0.12);  color: var(--s2); }
+.risk-price     { background: rgba(255,68,68,0.18);  color: var(--red); }
+
 /* ── Insider summary strip ───────────────────────────────── */
 .insider-summary {
   display: flex;

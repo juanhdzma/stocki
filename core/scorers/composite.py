@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+from datetime import datetime, timezone
 from .base import clamp
 from .fundamental_momentum import score as fm_score
 from .value_quality import score as vq_score
@@ -218,6 +219,50 @@ def diff_scores(old: dict | None, new: dict | None) -> dict | None:
     }
 
 
+# Risk flags — surfaced next to the verdict so silent logic (the revenue cap) and timing
+# hazards (earnings, bad quote, rich price) become visible decision inputs, not surprises.
+_EARNINGS_SOON_DAYS = 7
+
+
+def _days_to_earnings(dates: list | None) -> int | None:
+    if not dates:
+        return None
+    today = datetime.now(timezone.utc).date()
+    future = []
+    for ds in dates:
+        try:
+            dt = datetime.strptime(str(ds)[:10], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        if dt >= today:
+            future.append((dt - today).days)
+    return min(future) if future else None
+
+
+def _risk_flags(price_long: dict, snapshot: dict) -> list[dict]:
+    flags: list[dict] = []
+    rev_g = snapshot.get("revenue_growth")
+    if rev_g is not None and rev_g < 0:
+        flags.append({"key": "rev", "label": "REV↓",
+                      "title": f"Revenue shrinking ({rev_g:+.0%} YoY) — score capped below STRONG-BUY"})
+
+    days = _days_to_earnings(snapshot.get("earnings_dates"))
+    if days is not None and days <= _EARNINGS_SOON_DAYS:
+        flags.append({"key": "earnings", "label": f"E-{days}d",
+                      "title": f"Earnings in ~{days} day(s) — event risk before any entry"})
+
+    val  = (price_long.get("sub_scores") or {}).get("valuation")
+    vmax = (price_long.get("max_pts") or {}).get("valuation")
+    if val is not None and vmax and val / vmax < 0.30:
+        flags.append({"key": "expensive", "label": "$$$",
+                      "title": "Rich valuation — PE/PEG/P-S in the expensive tier"})
+
+    if snapshot.get("price_suspect"):
+        flags.append({"key": "price", "label": "PRICE?",
+                      "title": "Quote deviates >50% from prior close — data may be wrong"})
+    return flags
+
+
 def compute_all(fundamentals: list[dict], snapshot: dict) -> dict:
     base = {
         "fundamental_momentum": fm_score(fundamentals, snapshot),
@@ -231,4 +276,5 @@ def compute_all(fundamentals: list[dict], snapshot: dict) -> dict:
         "price_long":      price_long,
         "composite_long":  _composite_long(base, price_long, snapshot),
         "buy_target":      _buy_target(snapshot),
+        "flags":           _risk_flags(price_long, snapshot),
     }
