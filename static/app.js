@@ -4,19 +4,9 @@
 let watchlist = [];
 let watchlistData = {};
 let tickerStatus = {};
-let sortCol = "composite_short";
-let sortDir = -1;
 
 // ── Source URLs ───────────────────────────────────────────────────────────────
-const YF = t => `https://finance.yahoo.com/quote/${t}`;
-const SNAPSHOT_SOURCE   = t => YF(t) + "/key-statistics/";
-const RETURNS_SOURCE    = t => YF(t) + "/performance/";
-const FINANCIALS_SOURCE = t => YF(t) + "/financials/";
-const CASHFLOW_SOURCE   = t => YF(t) + "/cash-flow/";
-const BALANCE_SOURCE    = t => YF(t) + "/balance-sheet/";
-const ANALYSIS_SOURCE   = t => YF(t) + "/analysis/";
-const OPTIONS_SOURCE    = t => YF(t) + "/options/";
-const INSIDER_SOURCE    = t => `https://openinsider.com/screener?s=${t}`;
+const INSIDER_SOURCE = t => `https://openinsider.com/screener?s=${t}`;
 
 // ── Format helpers ────────────────────────────────────────────────────────────
 function fmtRaw(v, type) {
@@ -193,13 +183,9 @@ function buildTooltip(ticker, d) {
   const price  = snap.price;
   const pct52h = snap.pct_from_52w_high;
   const pct52hStr = pct52h != null ? `${(pct52h * 100).toFixed(1)}% from 52W high` : "";
-  const pct52hCls = pct52h != null
-    ? (pct52h > -0.05 ? "s-yellow" : pct52h > -0.2 ? "s-null" : "s-green")
-    : "";
+  const pct52hCls = pct52h != null ? pctScoreColor(pct52h, 0.30) : "";
 
-  const comp      = scores.composite || {};
-  const actionStr = comp.action || "NA";
-  const actionCls = "action-" + actionStr;
+  const comp = scores.composite_long || {};
 
   const CW = 440;
   const annualChart  = miniGroupedChart(
@@ -214,7 +200,7 @@ function buildTooltip(ticker, d) {
   const recent  = txs.filter(tx => tx.trade_date && new Date(tx.trade_date) >= ago90);
   const buys3m  = recent.filter(tx => (tx.trade_type || "").startsWith("P")).length;
   const sells3m = recent.filter(tx => (tx.trade_type || "").startsWith("S")).length;
-  const icScore = scores.insider_conviction?.sub_scores?.score_3m ?? null;
+  const icScore = scores.insider_conviction?.score ?? null;
 
   const p   = v => v != null ? `$${Number(v).toFixed(2)}` : "—";
   const pct = v => v != null ? `${(Number(v) * 100).toFixed(1)}%` : "—";
@@ -226,7 +212,7 @@ function buildTooltip(ticker, d) {
   <span class="tt-price">${price ? p(price) : "—"}</span>
   ${pct52hStr ? `<span class="tt-52h ${pct52hCls}">${pct52hStr}</span>` : ""}
   <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
-    <span class="action-badge ${actionCls}">${actionStr}</span>
+    ${actionBadge(scores)}
     ${comp.score != null ? `<span class="tt-comp-score">${comp.score.toFixed(1)}</span>` : ""}
   </span>
 </div>
@@ -247,7 +233,7 @@ ${ptBar ? `<div class="tt-section-lbl">Analyst Targets</div><div class="tt-chart
   <div class="tt-metric"><span class="tt-ml">52W Low</span><span class="tt-mv">${p(snap.week52_low)}</span></div>
   <div class="tt-metric"><span class="tt-ml">52W High</span><span class="tt-mv">${p(snap.week52_high)}</span></div>
   <div class="tt-metric"><span class="tt-ml">vs 52W Hi</span><span class="tt-mv ${pct52hCls}">${pct(snap.pct_from_52w_high)}</span></div>
-  <div class="tt-metric"><span class="tt-ml">vs 1W Hi</span><span class="tt-mv ${snap.pct_from_1w_high != null ? (snap.pct_from_1w_high > -0.02 ? "s-yellow" : snap.pct_from_1w_high > -0.05 ? "s-null" : "s-green") : ""}">${pct(snap.pct_from_1w_high)}</span></div>
+  <div class="tt-metric"><span class="tt-ml">vs 1W Hi</span><span class="tt-mv ${snap.pct_from_1w_high != null ? pctScoreColor(snap.pct_from_1w_high, 0.10) : ""}">${pct(snap.pct_from_1w_high)}</span></div>
 </div>
 <div class="tt-analyst">
   <span class="tt-ml">${snap.analyst_count != null ? snap.analyst_count + " analysts" : "—"}</span>
@@ -284,14 +270,36 @@ function positionTooltip(event, el) {
 
 // ── Score detail tooltip ──────────────────────────────────────────────────────
 function subScoreBar(label, val, max) {
-  const v = (val === null || val === undefined) ? 0 : val;
-  const pct = Math.min(100, (v / max) * 100);
-  const barColor = pct >= 70 ? "var(--green)" : pct >= 40 ? "var(--yellow)" : "var(--red)";
-  const numCls   = pct >= 70 ? "s-green"      : pct >= 40 ? "s-yellow"      : "s-red";
+  if (val === null || val === undefined) {
+    return `<div class="tt-sub-row">
+      <span class="tt-sub-lbl">${label}</span>
+      <div class="tt-sub-bar-wrap"></div>
+      <span class="tt-sub-val s-null">—<span class="subtext">/${max}</span></span>
+    </div>`;
+  }
+  const pct = Math.min(100, (val / max) * 100);
+  const barColor = scoreColorVar(pct);
+  const numCls   = scoreColor(pct);
   return `<div class="tt-sub-row">
     <span class="tt-sub-lbl">${label}</span>
     <div class="tt-sub-bar-wrap"><div class="tt-sub-bar" style="width:${pct.toFixed(0)}%;background:${barColor}"></div></div>
-    <span class="tt-sub-val ${numCls}">${v.toFixed(1)}<span class="subtext">/${max}</span></span>
+    <span class="tt-sub-val ${numCls}">${val.toFixed(1)}<span class="subtext">/${max}</span></span>
+  </div>`;
+}
+
+function bonusRow(label, val, max) {
+  if (val === null || val === undefined) {
+    return `<div class="tt-sub-row tt-bonus-row">
+      <span class="tt-sub-lbl">${label}</span>
+      <div class="tt-sub-bar-wrap"></div>
+      <span class="tt-sub-val s-null">—</span>
+    </div>`;
+  }
+  const pct = max ? Math.min(100, (val / max) * 100) : 0;
+  return `<div class="tt-sub-row tt-bonus-row">
+    <span class="tt-sub-lbl">${label}</span>
+    <div class="tt-sub-bar-wrap"><div class="tt-sub-bar" style="width:${pct.toFixed(0)}%;background:var(--green)"></div></div>
+    <span class="tt-bonus-badge">+${val.toFixed(1)}</span>
   </div>`;
 }
 
@@ -304,8 +312,8 @@ function signedBar(label, val, max) {
     </div>`;
   }
   const pct      = Math.min(100, (Math.abs(val) / max) * 100);
-  const barColor = val >= 0 ? "var(--green)" : "var(--red)";
-  const numCls   = val > 20 ? "s-green" : val < -20 ? "s-red" : "s-yellow";
+  const barColor = scoreColorVar(Math.max(0, Math.min(100, (val / max) * 50 + 50)));
+  const numCls   = pctScoreColor(val, max);
   const sign     = val > 0 ? "+" : "";
   return `<div class="tt-sub-row">
     <span class="tt-sub-lbl">${label}</span>
@@ -326,13 +334,16 @@ function buildScoreTooltip(ticker, col) {
       category = scores.fundamental_momentum || {};
       title = "Growth";
       const sub = category.sub_scores || {};
+      const max = category.max_pts || {};
       rows = [
-        subScoreBar("Revenue Trend",  sub.revenue_trend,  30),
-        subScoreBar("NI Trajectory",  sub.ni_trajectory,  28),
-        subScoreBar("GM Expansion",   sub.gm_expansion,   20),
-        subScoreBar("FCF Trajectory", sub.fcf_trajectory, 10),
-        subScoreBar("R&D Intensity",  sub.rd_intensity,    6),
-        subScoreBar("Rule of 40",     sub.rule_of_40,      6),
+        subScoreBar("Revenue Trend",  sub.revenue_trend,  max.revenue_trend),
+        subScoreBar("NI Trajectory",  sub.ni_trajectory,  max.ni_trajectory),
+        subScoreBar("GM Expansion",   sub.gm_expansion,   max.gm_expansion),
+        subScoreBar("FCF Trajectory", sub.fcf_trajectory, max.fcf_trajectory),
+        subScoreBar("R&D Intensity",  sub.rd_intensity,   max.rd_intensity),
+        subScoreBar("Rule of 40",     sub.rule_of_40,     max.rule_of_40),
+        subScoreBar("Est. Revisions", sub.estimate_revisions, max.estimate_revisions),
+        subScoreBar("Growth Consistency", sub.growth_consistency, max.growth_consistency),
       ].join("");
       break;
     }
@@ -340,12 +351,17 @@ function buildScoreTooltip(ticker, col) {
       category = scores.value_quality || {};
       title = "Quality";
       const sub = category.sub_scores || {};
+      const max = category.max_pts || {};
       rows = [
-        subScoreBar("Profitability",      sub.profitability,      35),
-        subScoreBar("Balance Sheet",      sub.balance_sheet,      25),
-        subScoreBar("Valuation",          sub.valuation,          20),
-        subScoreBar("Capital Discipline", sub.capital_discipline, 12),
-        subScoreBar("Analyst Conviction", sub.analyst_conviction,  8),
+        subScoreBar("Profitability",      sub.profitability,      max.profitability),
+        subScoreBar("Cash Position",      sub.cash_runway,        max.cash_runway),
+        subScoreBar("Execution Track",    sub.execution_track,    max.execution_track),
+        subScoreBar("Margin Durability",  sub.margin_durability,  max.margin_durability),
+        subScoreBar("Balance Sheet",      sub.balance_sheet,      max.balance_sheet),
+        subScoreBar("Capital Discipline", sub.capital_discipline, max.capital_discipline),
+        subScoreBar("Earnings Quality",   sub.earnings_quality,   max.earnings_quality),
+        bonusRow("Buyback bonus",         sub.buyback_bonus,      max.buyback_bonus),
+        bonusRow("Insider Ownership",     sub.insider_ownership_bonus, max.insider_ownership_bonus),
       ].join("");
       break;
     }
@@ -353,69 +369,168 @@ function buildScoreTooltip(ticker, col) {
       category = scores.insider_conviction || {};
       title = "Insiders";
       const sub = category.sub_scores || {};
-      const b3m = sub.valid_buys_3m;
-      const s3m = sub.valid_sells_3m;
-      rows = [
-        signedBar("Score 3M", sub.score_3m, 100),
-        signedBar("Score 1Y", sub.score_1y, 100),
-        `<div class="tt-sub-row" style="margin-top:2px">
-          <span class="tt-sub-lbl">Buys / Sells 3M</span>
-          <span class="tt-sub-val" style="margin-left:auto">
-            <span class="s-green">${b3m ?? "—"}B</span>
-            <span class="subtext"> / </span>
-            <span class="${(s3m || 0) > 0 ? "s-red" : "s-null"}">${s3m ?? "—"}S</span>
-          </span>
-        </div>`,
-      ].join("");
-      break;
-    }
-    case "price_short": {
-      category = scores.price_short || {};
-      title = "Price Short";
-      const sub = category.sub_scores || {};
-      rows = [
-        subScoreBar("Dip Signal",        sub.dip_signal,        50),
-        subScoreBar("Options Sentiment", sub.options_sentiment, 30),
-        subScoreBar("Short Setup",       sub.short_setup,       20),
-      ].join("");
+      const txsRaw = d.insider_transactions || [];
+
+      const yr365ms = 365 * 86400 * 1000;
+      const nowMs   = Date.now();
+
+      const roleShort = t => {
+        const u = (t || "").toUpperCase();
+        if (u.includes("CEO") || u.includes("PRESIDENT") || u.includes("CHAIRMAN")) return "CEO";
+        if (u.includes("CFO") || u.includes("CHIEF FIN"))  return "CFO";
+        if (u.includes("COO") || u.includes("CTO"))         return "COO";
+        if (u.includes("SVP") || u.includes("EVP") || u.includes("CHIEF")) return "SVP";
+        if (u.includes("10%") || u.includes("BENEFICIAL"))  return "10%";
+        if (u.includes("DIRECTOR") || / DIR[,\s]/.test(" " + u)) return "Dir";
+        if (u.includes("VP") || u.includes("VICE"))         return "VP";
+        return "—";
+      };
+      const fmtVal = v => {
+        if (v >= 1e9) return `$${(v/1e9).toFixed(1)}B`;
+        if (v >= 1e6) return `$${(v/1e6).toFixed(1)}M`;
+        if (v >= 1e3) return `$${(v/1e3).toFixed(0)}K`;
+        return `$${v.toFixed(0)}`;
+      };
+      const fmtDate = dt => {
+        const mo = String(dt.getMonth()+1).padStart(2,"0");
+        const dy = String(dt.getDate()).padStart(2,"0");
+        return `${mo}/${dy}`;
+      };
+
+      const mc = (d.snapshot || {}).market_cap || 0;
+
+      const parseDeltaOwn = v => {
+        const s = String(v || "").replace("%","").replace("+","").trim();
+        if (!s || s.includes(">") || s.includes("<")) return null;
+        const f = parseFloat(s);
+        return isNaN(f) ? null : f / 100;
+      };
+
+      const parsed = txsRaw.map(tx => {
+        const dt     = tx.trade_date ? new Date(tx.trade_date) : null;
+        const rawVal = String(tx.Value || tx.value_usd || "0").replace(/[^0-9.-]/g, "");
+        const val    = Math.abs(parseFloat(rawVal) || 0);
+        const isBuy  = (tx.trade_type || "").startsWith("P");
+        const role   = roleShort(tx.title);
+        const dOwn   = parseDeltaOwn(tx["ΔOwn"] ?? tx.delta_own);
+
+        // Mirror Python filter logic to label excluded transactions
+        let excluded = null;
+        if (!isBuy) {
+          const isSaleOE = (tx.trade_type || "").includes("+OE") || (tx.trade_type || "").includes("OE");
+          if (role === "10%") {
+            excluded = "institutional";
+          } else if (isSaleOE && (dOwn === null || dOwn >= -0.10)) {
+            const pctStr = dOwn !== null ? ` (${(dOwn*100).toFixed(0)}%)` : "";
+            excluded = `S+OE${pctStr}`;
+          } else if (dOwn !== null) {
+            const thr = mc > 500e9 ? -0.10 : mc > 10e9 ? -0.05 : -0.03;
+            if (dOwn > thr) excluded = `Δ${(dOwn*100).toFixed(0)}%`;
+          }
+        }
+
+        return { dt, val, isBuy, name: tx.insider_name || "—", title: tx.title || "", role, excluded };
+      }).filter(tx => tx.dt && (nowMs - tx.dt.getTime()) <= yr365ms);
+
+      // Detect scheduled sellers: 3+ sells, weekly/monthly cadence, low variance
+      const sellDates = {};
+      parsed.filter(tx => !tx.isBuy).forEach(tx => {
+        (sellDates[tx.name] = sellDates[tx.name] || []).push(tx.dt.getTime());
+      });
+      const scheduled = new Set();
+      for (const [name, dts] of Object.entries(sellDates)) {
+        if (dts.length < 3) continue;
+        const sorted = [...dts].sort((a,b) => a-b);
+        const ivs = sorted.slice(1).map((d,i) => (d - sorted[i]) / 86400000);
+        const m = ivs.reduce((a,b) => a+b, 0) / ivs.length;
+        const s = Math.sqrt(ivs.reduce((a,b) => a + (b-m)**2, 0) / ivs.length);
+        if (m >= 5 && m <= 35 && s/m < 0.30) scheduled.add(name);
+      }
+
+      // Scored first, then excluded; within each group sort by value desc
+      const scored   = parsed.filter(tx => tx.isBuy || !tx.excluded);
+      const excluded = parsed.filter(tx => !tx.isBuy && tx.excluded);
+      const top = [
+        ...scored.sort((a,b) => b.val - a.val).slice(0, 5),
+        ...excluded.sort((a,b) => b.val - a.val).slice(0, 3),
+      ];
+
+      const validBuys  = sub.valid_buys  ?? "—";
+      const validSells = sub.valid_sells ?? "—";
+
+      const statsRow = `<div class="tt-sub-row" style="margin-bottom:6px">
+        <span class="tt-sub-lbl">Scored activity (1Y)</span>
+        <span class="tt-sub-val" style="margin-left:auto">
+          <span class="s-green">${validBuys}B</span>
+          <span class="subtext"> / </span>
+          <span class="${(validSells||0) > 0 ? "s-red" : "s-null"}">${validSells}S</span>
+        </span>
+      </div>`;
+
+      const txRows = top.length === 0
+        ? `<div style="color:var(--subtext);font-size:11px;padding:4px 0">No significant activity in past year</div>`
+        : top.map(tx => {
+            const isExcluded = !tx.isBuy && !!tx.excluded;
+            const isScheduled = !tx.isBuy && scheduled.has(tx.name);
+            const opacity = isExcluded ? "opacity:0.4;" : "";
+            const cls  = tx.isBuy ? "s-green" : (isExcluded ? "s-null" : "s-red");
+            const dir  = tx.isBuy ? "B" : "S";
+            const name = tx.name.length > 18 ? tx.name.slice(0, 17) + "…" : tx.name;
+            const tag  = isExcluded
+              ? `<span class="subtext" style="font-size:9px"> ${tx.excluded}</span>`
+              : isScheduled
+              ? `<span class="subtext" style="font-size:9px"> auto</span>`
+              : "";
+            return `<div class="tt-sub-row" style="font-size:11px;gap:4px;align-items:center;${opacity}">
+              <span class="subtext" style="min-width:32px">${fmtDate(tx.dt)}</span>
+              <span class="${cls}" style="min-width:18px;font-weight:700">${dir}</span>
+              <span class="subtext" style="min-width:28px">${tx.role}</span>
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+              <span style="min-width:48px;text-align:right;font-weight:500">${fmtVal(tx.val)}${tag}</span>
+            </div>`;
+          }).join("");
+
+      rows = statsRow + `<div style="border-top:1px solid var(--border);padding-top:5px;margin-top:2px">${txRows}</div>`;
       break;
     }
     case "price_long": {
       category = scores.price_long || {};
-      title = "Price Long";
+      title = "Sentimiento";
       const sub = category.sub_scores || {};
+      const max = category.max_pts || {};
       rows = [
-        subScoreBar("Price Discount", sub.price_discount, 40),
-        subScoreBar("Analyst Upside", sub.analyst_upside, 35),
-        subScoreBar("Buybacks",       sub.buyback_signal, 25),
+        subScoreBar("FCF Yield",          sub.fcf_yield,          max.fcf_yield),
+        subScoreBar("Analyst Upside",     sub.analyst_upside,     max.analyst_upside),
+        subScoreBar("Valuation",          sub.valuation,          max.valuation),
+        subScoreBar("Analyst Conviction", sub.analyst_conviction, max.analyst_conviction),
       ].join("");
       break;
     }
-    case "composite_short":
     case "composite_long": {
-      const isShort = col === "composite_short";
-      category = scores[col] || {};
-      title = isShort ? "Score Short" : "Score Long";
-      const priceKey = isShort ? "price_short" : "price_long";
-      const priceLabel = isShort ? "P.Short" : "P.Long";
+      category = scores.composite_long || {};
+      title = "Score Long";
       const weights = category.weights || {};
       const cats = [
         { key: "fundamental_momentum", label: "Growth"    },
         { key: "value_quality",        label: "Quality"   },
         { key: "insider_conviction",   label: "Insiders"  },
-        { key: priceKey,               label: priceLabel  },
       ];
+      const bar = s => s != null ? `<div class="tt-sub-bar" style="width:${Math.min(100, s).toFixed(0)}%;background:${s >= 70 ? "var(--green)" : s >= 50 ? "var(--yellow)" : "var(--red)"}"></div>` : "";
       rows = cats.map(c => {
         const s  = scores[c.key]?.score;
-        const wt = weights[c.key] ?? weights[priceKey] ?? 25;
-        const pct = s != null ? Math.min(100, s) : 0;
-        const barColor = s != null ? (s >= 70 ? "var(--green)" : s >= 50 ? "var(--yellow)" : "var(--red)") : "";
+        const wt = weights[c.key] ?? 0;
         return `<div class="tt-sub-row">
           <span class="tt-sub-lbl">${c.label} <span class="subtext">${wt}%</span></span>
-          <div class="tt-sub-bar-wrap">${s != null ? `<div class="tt-sub-bar" style="width:${pct.toFixed(0)}%;background:${barColor}"></div>` : ""}</div>
+          <div class="tt-sub-bar-wrap">${bar(s)}</div>
           <span class="tt-sub-val ${scoreColor(s)}">${s != null ? s.toFixed(1) : "—"}</span>
         </div>`;
       }).join("");
+      const pl = scores.price_long?.score ?? null;
+      rows += `<div class="tt-sub-row" title="Attractive price can lift a good business into STRONG BUY — a rich price never drags it down">
+        <span class="tt-sub-lbl">Sentimiento <span class="subtext">boost</span></span>
+        <div class="tt-sub-bar-wrap">${bar(pl)}</div>
+        <span class="tt-sub-val ${scoreColor(pl)}">${pl != null ? pl.toFixed(1) : "—"}</span>
+      </div>`;
       break;
     }
     default:
@@ -440,194 +555,62 @@ function showScoreTooltip(event, ticker, col) {
   positionTooltip(event, el);
 }
 
-// ── Raw data table (detail view) ──────────────────────────────────────────────
-const SNAPSHOT_SECTIONS = [
-  {
-    label: "Price & Market",
-    src: SNAPSHOT_SOURCE,
-    fields: [
-      { key: "price",              label: "Price",               fmt: "price"   },
-      { key: "market_cap",         label: "Market Cap",          fmt: "large"   },
-      { key: "enterprise_value",   label: "Enterprise Value",    fmt: "large"   },
-      { key: "week52_low",         label: "52W Low",             fmt: "price"   },
-      { key: "week52_high",        label: "52W High",            fmt: "price"   },
-      { key: "pct_from_52w_high",  label: "% from 52W High",     fmt: "pct"     },
-      { key: "pct_from_1w_high",   label: "% from 1W High",      fmt: "pct"     },
-      { key: "beta",               label: "Beta",                fmt: "decimal" },
-      { key: "average_volume",     label: "Avg Volume",          fmt: "large"   },
-      { key: "shares_outstanding", label: "Shares Outstanding",  fmt: "large"   },
-      { key: "sector",             label: "Sector",              fmt: "text"    },
-      { key: "industry",           label: "Industry",            fmt: "text"    },
-    ],
-  },
-  {
-    label: "Valuation Multiples",
-    src: SNAPSHOT_SOURCE,
-    fields: [
-      { key: "trailing_pe",    label: "Trailing P/E",   fmt: "decimal" },
-      { key: "forward_pe",     label: "Forward P/E",    fmt: "decimal" },
-      { key: "peg_ratio",      label: "PEG Ratio",      fmt: "decimal" },
-      { key: "eps_ttm",        label: "EPS (TTM)",      fmt: "price"   },
-      { key: "price_to_sales", label: "Price / Sales",  fmt: "decimal" },
-      { key: "ev_to_revenue",  label: "EV / Revenue",   fmt: "decimal" },
-    ],
-  },
-  {
-    label: "Margins & Returns",
-    src: FINANCIALS_SOURCE,
-    fields: [
-      { key: "gross_margin",     label: "Gross Margin",     fmt: "pct" },
-      { key: "operating_margin", label: "Operating Margin", fmt: "pct" },
-      { key: "net_margin",       label: "Net Margin",       fmt: "pct" },
-      { key: "roe",              label: "ROE",              fmt: "pct" },
-      { key: "roa",              label: "ROA",              fmt: "pct" },
-      { key: "fcf_yield",        label: "FCF Yield",        fmt: "pct" },
-    ],
-  },
-  {
-    label: "Growth (YoY)",
-    src: FINANCIALS_SOURCE,
-    fields: [
-      { key: "revenue_growth",  label: "Revenue Growth",  fmt: "pct" },
-      { key: "earnings_growth", label: "Earnings Growth", fmt: "pct" },
-      { key: "dilution_rate",   label: "Dilution Rate",   fmt: "pct" },
-    ],
-  },
-  {
-    label: "Liquidity & Leverage",
-    src: BALANCE_SOURCE,
-    fields: [
-      { key: "current_ratio",  label: "Current Ratio", fmt: "decimal" },
-      { key: "quick_ratio",    label: "Quick Ratio",   fmt: "decimal" },
-      { key: "debt_to_equity", label: "Debt / Equity", fmt: "decimal" },
-    ],
-  },
-  {
-    label: "Ownership",
-    src: SNAPSHOT_SOURCE,
-    fields: [
-      { key: "held_pct_insiders",      label: "Insider %",       fmt: "pct"     },
-      { key: "held_pct_institutions",  label: "Institutional %", fmt: "pct"     },
-      { key: "short_percent_of_float", label: "Short % Float",   fmt: "pct"     },
-      { key: "short_ratio",            label: "Short Ratio",     fmt: "decimal" },
-    ],
-  },
-  {
-    label: "Analyst",
-    src: ANALYSIS_SOURCE,
-    fields: [
-      { key: "target_low",          label: "Target Low",        fmt: "price"   },
-      { key: "target_mean",         label: "Target Mean",       fmt: "price"   },
-      { key: "target_high",         label: "Target High",       fmt: "price"   },
-      { key: "analyst_count",       label: "# Analysts",        fmt: "decimal" },
-      { key: "recommendation_mean", label: "Rec. Mean (1=Buy)", fmt: "decimal" },
-      { key: "recommendation_key",  label: "Consensus",         fmt: "text"    },
-      { key: "rec_strong_buy",      label: "Strong Buy",        fmt: "decimal" },
-      { key: "rec_buy",             label: "Buy",               fmt: "decimal" },
-      { key: "rec_hold",            label: "Hold",              fmt: "decimal" },
-      { key: "rec_sell",            label: "Sell",              fmt: "decimal" },
-      { key: "rec_strong_sell",     label: "Strong Sell",       fmt: "decimal" },
-    ],
-  },
-];
+// ── Score delta tooltip ─────────────────────────────────────────────────────
+const DELTA_CATEGORY_LABELS = {
+  fundamental_momentum: "Growth",
+  value_quality:        "Quality",
+  insider_conviction:   "Insiders",
+  price_long:           "Sentimiento",
+};
 
-const RETURNS_FIELDS = [
-  { key: "ticker_return_1m",  label: "Return 1M",      fmt: "pct" },
-  { key: "spy_return_1m",     label: "SPY Return 1M",  fmt: "pct" },
-  { key: "ticker_return_3m",  label: "Return 3M",      fmt: "pct" },
-  { key: "spy_return_3m",     label: "SPY Return 3M",  fmt: "pct" },
-  { key: "ticker_return_6m",  label: "Return 6M",      fmt: "pct" },
-  { key: "spy_return_6m",     label: "SPY Return 6M",  fmt: "pct" },
-  { key: "ticker_return_12m", label: "Return 12M",     fmt: "pct" },
-  { key: "spy_return_12m",    label: "SPY Return 12M", fmt: "pct" },
-];
-
-const FUND_FIELDS = [
-  { key: "revenue",             label: "Revenue",          fmt: "large" },
-  { key: "gross_margin",        label: "Gross Margin",     fmt: "pct"   },
-  { key: "ebit",                label: "EBIT",             fmt: "large" },
-  { key: "net_income",          label: "Net Income",       fmt: "large" },
-  { key: "rd_expense",          label: "R&D Expense",      fmt: "large" },
-  { key: "total_assets",        label: "Total Assets",     fmt: "large" },
-  { key: "total_equity",        label: "Total Equity",     fmt: "large" },
-  { key: "total_debt",          label: "Total Debt",       fmt: "large" },
-  { key: "cash",                label: "Cash",             fmt: "large" },
-  { key: "operating_cash_flow", label: "Operating CF",     fmt: "large" },
-  { key: "fcf",                 label: "FCF",              fmt: "large" },
-  { key: "buybacks",            label: "Buybacks",         fmt: "large" },
-  { key: "interest_expense",    label: "Interest Expense", fmt: "large" },
-];
-
-function sectionRow(label, colspan, url) {
-  const link = url ? srcLink(url) : "";
-  return `<tr class="section-row"><td colspan="${colspan}">${label}${link}</td></tr>`;
+function deltaBar(label, val, max) {
+  const pct      = Math.min(100, (Math.abs(val) / max) * 100);
+  const barColor = scoreColorVar(Math.max(0, Math.min(100, (val / max) * 50 + 50)));
+  const numCls   = pctScoreColor(val, max);
+  const rounded  = val.toFixed(1) === "-0.0" ? "0.0" : val.toFixed(1);
+  const sign     = val > 0 ? "+" : "";
+  return `<div class="tt-sub-row">
+    <span class="tt-sub-lbl">${label}</span>
+    <div class="tt-sub-bar-wrap"><div class="tt-sub-bar" style="width:${pct.toFixed(0)}%;background:${barColor}"></div></div>
+    <span class="tt-sub-val ${numCls}">${sign}${rounded}</span>
+  </div>`;
 }
 
-function renderRawTable(tickers, raw) {
-  const cols = tickers.length + 1;
-  const t0   = tickers[0];
-  const head = `<thead><tr><th>Field</th>${tickers.map(t => `<th>${t}</th>`).join("")}</tr></thead>`;
+function buildDeltaTooltip(ticker) {
+  const d  = watchlistData[ticker];
+  const sc = d?.score_change;
+  if (!sc) return `<div class="tt-head"><span class="tt-ticker">${ticker}</span><span class="subtext" style="margin-left:8px">Sin historial de hace 7d</span></div>`;
 
-  const snapSections = SNAPSHOT_SECTIONS.map(sec => {
-    const rows = sec.fields.map(f => {
-      const cells = tickers.map(t => `<td>${fmtRaw(raw[t]?.snapshot?.[f.key], f.fmt)}</td>`).join("");
-      return `<tr><td>${f.label}</td>${cells}</tr>`;
-    }).join("");
-    return sectionRow(sec.label, cols, sec.src(t0)) + rows;
-  }).join("");
+  const comp = sc.composite || {};
+  const catRows = Object.entries(sc.categories || {})
+    .map(([key, c]) => deltaBar(DELTA_CATEGORY_LABELS[key] || key, c.delta, 8))
+    .join("");
 
-  const retRows = RETURNS_FIELDS.map(f => {
-    const cells = tickers.map(t => `<td>${fmtRaw(raw[t]?.returns?.[f.key], f.fmt)}</td>`).join("");
-    return `<tr><td>${f.label}</td>${cells}</tr>`;
-  }).join("");
+  const moverRows = (sc.movers || []).map(m => `
+    <div class="tt-sub-row" style="font-size:11px">
+      <span class="tt-sub-lbl" style="opacity:.7">${m.category} · ${m.key.replace(/_/g, " ")}</span>
+      <span class="tt-sub-val ${m.delta > 0 ? "s-green" : "s-red"}" style="margin-left:auto">${m.delta > 0 ? "+" : ""}${m.delta.toFixed(1)}</span>
+    </div>`).join("");
 
+  const deltaCls = comp.delta > 0 ? "s-green" : comp.delta < 0 ? "s-red" : "s-yellow";
   return `
-    <section class="cat-section">
-      <h2>Market Data</h2>
-      <table>
-        ${head}
-        <tbody>
-          ${snapSections}
-          ${sectionRow("Returns vs SPY", cols, RETURNS_SOURCE(t0))}
-          ${retRows}
-        </tbody>
-      </table>
-    </section>`;
+<div class="tt-head">
+  <span class="tt-ticker">${ticker}</span>
+  <span class="subtext" style="margin-left:4px;font-size:11px">Score 7d ${comp.old?.toFixed(1)} → ${comp.new?.toFixed(1)}</span>
+  <span class="tt-comp-score ${deltaCls}" style="margin-left:auto;font-size:13px;font-weight:700">${comp.delta > 0 ? "+" : ""}${comp.delta?.toFixed(1)}</span>
+</div>
+<div class="tt-subs">
+  ${catRows}
+  ${moverRows ? `<div style="border-top:1px solid var(--border);padding-top:5px;margin-top:5px">${moverRows}</div>` : ""}
+</div>`;
 }
 
-function renderFundamentalsTable(tickers, raw) {
-  const t0          = tickers[0];
-  const annuals     = raw[t0]?.annuals    || [];
-  const quarterlies = raw[t0]?.quarterlies || [];
-  const periods     = [...annuals, ...quarterlies];
-
-  if (!periods.length) return "";
-
-  const periodCols  = periods.map(p => `<th>${p.period}</th>`).join("");
-  const head        = `<thead><tr><th>Field</th>${periodCols}</tr></thead>`;
-  const annualCount = annuals.length;
-
-  const rows = FUND_FIELDS.map(f => {
-    const cells = periods.map((p, i) => {
-      const cls = i < annualCount ? "" : " class=\"subtext\"";
-      return `<td${cls}>${fmtRaw(p[f.key], f.fmt)}</td>`;
-    }).join("");
-    return `<tr><td>${f.label}</td>${cells}</tr>`;
-  }).join("");
-
-  const sepCol = annualCount > 0 && quarterlies.length > 0
-    ? `<col span="${annualCount}" style="border-right:2px solid var(--border)">`
-    : "";
-
-  return `
-    <section class="cat-section">
-      <h2>Fundamentals${srcLink(FINANCIALS_SOURCE(t0))}</h2>
-      <table>
-        <colgroup><col>${sepCol}</colgroup>
-        ${head}
-        <tbody>${rows}</tbody>
-      </table>
-    </section>`;
+function showDeltaTooltip(event, ticker) {
+  const el = document.getElementById("tooltip");
+  el.style.width = "";
+  el.innerHTML = buildDeltaTooltip(ticker);
+  el.style.display = "block";
+  positionTooltip(event, el);
 }
 
 function renderInsiderTable(tickers, raw) {
@@ -688,9 +671,34 @@ function renderInsiderTable(tickers, raw) {
 // ── Score cards (detail view) ─────────────────────────────────────────────────
 function scoreColor(s) {
   if (s === null || s === undefined) return "s-null";
-  if (s >= 70) return "s-green";
-  if (s >= 50) return "s-yellow";
-  return "s-red";
+  if (s >= 80) return "ic-l5";
+  if (s >= 60) return "ic-l4";
+  if (s >= 40) return "ic-l3";
+  if (s >= 20) return "ic-l2";
+  return "ic-l1";
+}
+
+function scoreColorVar(s) {
+  if (s === null || s === undefined) return "var(--null)";
+  if (s >= 80) return "var(--s5)";
+  if (s >= 60) return "var(--s4)";
+  if (s >= 40) return "var(--s3)";
+  if (s >= 20) return "var(--s2)";
+  return "var(--s1)";
+}
+
+function pctScoreColor(val, scale) {
+  if (val === null || val === undefined) return "s-null";
+  return scoreColor(Math.max(0, Math.min(100, (val / scale) * 50 + 50)));
+}
+
+function actionLabel(a) {
+  return (a || "NA").replace("-", " ");
+}
+
+function actionBadge(scores) {
+  const a = scores?.composite_long?.action || "NA";
+  return `<span class="action-badge action-${a}">${actionLabel(a)}</span>`;
 }
 
 
@@ -699,43 +707,79 @@ function scoreLabel(s) {
   return (s === null || s === undefined) ? "—" : s.toFixed(1);
 }
 
-function fmDetails(sub) {
-  if (!sub) return "—";
-  const p = [];
-  if (sub.revenue_trend  != null) p.push(sub.revenue_trend  >= 16 ? "Rev ↑"  : sub.revenue_trend  >= 8  ? "Rev →" : "Rev ↓");
-  if (sub.ni_trajectory  != null) p.push(sub.ni_trajectory  >= 13 ? "NI ↑"   : sub.ni_trajectory  >= 8  ? "NI →"  : "NI ↓");
-  if (sub.gm_expansion   != null) p.push(sub.gm_expansion   >= 9  ? "GM ↑"   : sub.gm_expansion   >= 6  ? "GM →"  : "GM ↓");
-  if (sub.rule_of_40     >= 5)    p.push("R40 ✓");
-  return p.join(" · ") || "—";
+function fmtPctSigned(v) { return v == null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`; }
+function fmtPctLevel(v)  { return v == null ? "—" : `${(v * 100).toFixed(1)}%`; }
+
+function statRow(label, valueText, colorPct) {
+  const pct = colorPct != null ? Math.max(0, Math.min(100, colorPct)) : 0;
+  const barColor = colorPct != null ? scoreColorVar(colorPct) : "var(--null)";
+  return `<div class="stat-row">
+    <span class="stat-lbl">${label}</span>
+    <div class="stat-bar-wrap"><div class="stat-bar-fill" style="width:${pct.toFixed(0)}%;background:${barColor}"></div></div>
+    <span class="stat-val ${scoreColor(colorPct)}">${valueText}</span>
+  </div>`;
 }
 
-function vqDetails(sub) {
-  if (!sub) return "—";
-  const p = [];
-  if (sub.balance_sheet      != null) p.push(sub.balance_sheet     >= 14 ? "Solid BS"   : sub.balance_sheet >= 8 ? "OK BS" : "Weak BS");
-  if (sub.profitability      != null) p.push(sub.profitability     >= 14 ? "Profitable" : sub.profitability >= 8 ? "OK margins" : "Thin");
-  if (sub.capital_discipline != null && sub.capital_discipline >= 7) p.push("Cap discipline ✓");
-  return p.join(" · ") || "—";
+function cardBadge(label) {
+  return `<span class="card-badge">${label}</span>`;
+}
+
+// colorPct: reuse the underlying 0-100 sub-score so the bar/number still
+// reflects "is this good", even though the displayed text is the real-world stat.
+function subPct(sub, max, key) {
+  return (sub[key] != null && max?.[key]) ? (sub[key] / max[key]) * 100 : null;
+}
+
+// Fallback for sub-scores with no clean single real-world stat (e.g. trend deltas):
+// show the raw points instead of fabricating a number the scorer didn't actually compute.
+function pointsLabel(sub, max, key) {
+  return (sub[key] != null && max?.[key] != null) ? `${sub[key].toFixed(1)}/${max[key]}` : "—";
+}
+
+function fmDetails(cat, snap, quarterlies) {
+  const sub = cat?.sub_scores, max = cat?.max_pts;
+  if (!sub || !snap) return "—";
+  const q0 = (quarterlies || [])[0];
+  const rdPct = (q0 && q0.rd_expense != null && q0.revenue) ? q0.rd_expense / q0.revenue : null;
+  return [
+    statRow("Revenue Growth",  fmtPctSigned(snap.revenue_growth),  subPct(sub, max, "revenue_trend")),
+    statRow("Earnings Growth", fmtPctSigned(snap.earnings_growth), subPct(sub, max, "ni_trajectory")),
+    statRow("Gross Margin",    fmtPctLevel(snap.gross_margin),     subPct(sub, max, "gm_expansion")),
+    statRow("R&D Intensity",   rdPct != null ? fmtPctLevel(rdPct) : pointsLabel(sub, max, "rd_intensity"), subPct(sub, max, "rd_intensity")),
+    statRow("FCF Trend",       pointsLabel(sub, max, "fcf_trajectory"), subPct(sub, max, "fcf_trajectory")),
+    sub.rule_of_40 >= 5 ? cardBadge("Rule of 40 ✓") : "",
+  ].join("") || "—";
+}
+
+function vqDetails(cat, snap) {
+  const sub = cat?.sub_scores, max = cat?.max_pts;
+  if (!sub || !snap) return "—";
+  return [
+    statRow("ROE",           fmtPctLevel(snap.roe),                                        subPct(sub, max, "profitability")),
+    statRow("FCF Yield",     fmtPctLevel(snap.fcf_yield),                                  subPct(sub, max, "profitability")),
+    statRow("Debt/Equity",   snap.debt_to_equity != null ? snap.debt_to_equity.toFixed(2) : "—", subPct(sub, max, "balance_sheet")),
+    statRow("Dilution Rate", fmtPctSigned(snap.dilution_rate), subPct(sub, max, "capital_discipline")),
+    sub.buyback_bonus >= 1 ? cardBadge("Buybacks ↑") : "",
+  ].join("") || "—";
 }
 
 function icDetails(sub) {
   if (!sub) return "—";
-  const p = [];
-  if (sub.score_3m    != null) p.push(`3M ${sub.score_3m >= 0 ? "+" : ""}${sub.score_3m.toFixed(0)}`);
-  if (sub.valid_buys_3m != null) p.push(`${sub.valid_buys_3m}B / ${sub.valid_sells_3m || 0}S`);
-  return p.join(" · ") || "—";
+  const b = sub.valid_buys  ?? null;
+  const s = sub.valid_sells ?? null;
+  if (b == null && s == null) return "—";
+  return `${b ?? 0}B / ${s ?? 0}S`;
 }
 
-function poDetails(sub) {
-  if (!sub) return "—";
-  const p = [];
-  if (sub.dip_signal      != null) p.push(sub.dip_signal     >= 20 ? "Dip ↑"       : sub.dip_signal    >= 10 ? "Mild dip" : "No dip");
-  if (sub.price_discount  != null) p.push(sub.price_discount >= 12 ? "Discount ↑"   : "Near fair");
-  if (sub.buyback_signal  != null && sub.buyback_signal >= 8) p.push("Buybacks ↑");
-  if (sub.short_setup     != null) p.push(sub.short_setup    >= 12 ? "Squeeze risk" : "Low short");
-
-  if (sub.options_sentiment != null && sub.options_sentiment >= 10) p.push("Fear (buy)");
-  return p.filter(Boolean).join(" · ") || "—";
+function plDetails(cat, snap) {
+  const sub = cat?.sub_scores, max = cat?.max_pts;
+  if (!sub || !snap) return "—";
+  const upside = (snap.price && snap.target_mean) ? (snap.target_mean / snap.price - 1) : null;
+  return [
+    statRow("FCF Yield",      fmtPctLevel(snap.fcf_yield),          subPct(sub, max, "fcf_yield")),
+    statRow("Analyst Upside", fmtPctSigned(upside),                 subPct(sub, max, "analyst_upside")),
+    statRow("Trailing P/E",   snap.trailing_pe != null ? snap.trailing_pe.toFixed(1) : "—", subPct(sub, max, "valuation")),
+  ].join("") || "—";
 }
 
 function renderScoreCards(tickers, raw) {
@@ -743,20 +787,19 @@ function renderScoreCards(tickers, raw) {
     const scores = raw[ticker]?.scores;
     if (!scores) return "";
 
+    const snap = raw[ticker]?.snapshot || {};
+    const quarterlies = raw[ticker]?.quarterlies || [];
     const fm   = scores.fundamental_momentum || {};
     const vq   = scores.value_quality        || {};
     const ic   = scores.insider_conviction   || {};
-    const po   = scores.price_opportunity    || {};
-    const comp = scores.composite            || {};
-
-    const action    = comp.action || "NA";
-    const actionCls = "action-" + action;
+    const pl   = scores.price_long           || {};
+    const comp = scores.composite_long       || {};
 
     const cards = [
-      { title: "Growth",   score: fm.score, detail: fmDetails(fm.sub_scores) },
-      { title: "Quality",  score: vq.score, detail: vqDetails(vq.sub_scores) },
+      { title: "Growth",   score: fm.score, detail: fmDetails(fm, snap, quarterlies) },
+      { title: "Quality",  score: vq.score, detail: vqDetails(vq, snap) },
       { title: "Insiders", score: ic.score, detail: icDetails(ic.sub_scores) },
-      { title: "Entry",    score: po.score, detail: poDetails(po.sub_scores) },
+      { title: "Sentimiento", score: pl.score, detail: plDetails(pl, snap) },
     ].map(c => `
       <div class="score-card">
         <div class="score-card-title">${c.title}</div>
@@ -772,7 +815,7 @@ function renderScoreCards(tickers, raw) {
       <div class="score-ticker-block">
         <div class="score-ticker-header">
           <span class="score-ticker-name">${ticker}</span>
-          <span class="action-badge ${actionCls}">${action}</span>
+          ${actionBadge(scores)}
           ${compVal}
         </div>
         <div class="score-cards">${cards}</div>
@@ -783,6 +826,403 @@ function renderScoreCards(tickers, raw) {
     <section class="cat-section">
       <h2>Signal Overview</h2>
       ${blocks}
+    </section>`;
+}
+
+// ── Trajectory charts (detail view) ────────────────────────────────────────────
+function fmtCompact(n) {
+  if (n == null) return "—";
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(0)}M`;
+  if (abs >= 1e3) return `${sign}${(abs / 1e3).toFixed(0)}K`;
+  return `${sign}${abs.toFixed(0)}`;
+}
+
+let chartRegistry = {};
+
+function svgUserX(event, svgEl, viewBoxW) {
+  const rect = svgEl.getBoundingClientRect();
+  const relX = event.clientX - rect.left;
+  return Math.max(0, Math.min(viewBoxW, relX * (viewBoxW / rect.width)));
+}
+
+function chartTooltipShow(event, html) {
+  const el = document.getElementById("tooltip");
+  el.style.width = "";
+  el.innerHTML = html;
+  el.style.display = "block";
+  positionTooltip(event, el);
+}
+
+function chartHoverEnd(id) {
+  const cross = document.getElementById(`${id}-cross`);
+  const dot   = document.getElementById(`${id}-dot`);
+  if (cross) cross.style.display = "none";
+  if (dot)   dot.style.display = "none";
+  hideTooltip();
+}
+
+function priceChartHover(event, id) {
+  const reg = chartRegistry[id];
+  if (!reg) return;
+  const ux = svgUserX(event, document.getElementById(id), reg.W);
+  let idx = Math.round((ux - reg.padX) / reg.gap);
+  idx = Math.max(0, Math.min(reg.points.length - 1, idx));
+  const p = reg.points[idx];
+  const x = reg.padX + reg.gap * idx;
+  const y = reg.plotTop + reg.plotH - ((p.close - reg.min) / reg.range) * reg.plotH;
+
+  const cross = document.getElementById(`${id}-cross`);
+  const dot   = document.getElementById(`${id}-dot`);
+  if (cross) { cross.setAttribute("x1", x.toFixed(1)); cross.setAttribute("x2", x.toFixed(1)); cross.style.display = ""; }
+  if (dot)   { dot.setAttribute("cx", x.toFixed(1)); dot.setAttribute("cy", y.toFixed(1)); dot.style.display = ""; }
+
+  chartTooltipShow(event, `<div class="tt-head"><span class="tt-ticker">${p.date}</span></div><div style="padding:4px 2px;font-size:13px;font-weight:600">$${p.close.toFixed(2)}</div>`);
+}
+
+function calendarTicks(points, mode) {
+  const raw = [0];
+  for (let i = 1; i < points.length; i++) {
+    const d = new Date(points[i].date + "T00:00:00");
+    if (mode === "week") {
+      if (d.getDay() === 1) raw.push(i);
+    } else {
+      const prev = new Date(points[i - 1].date + "T00:00:00");
+      if (d.getMonth() !== prev.getMonth()) raw.push(i);
+    }
+  }
+  const minGap = Math.max(1, Math.floor(points.length / 9));
+  const ticks = [raw[0]];
+  for (let i = 1; i < raw.length; i++) {
+    if (raw[i] - ticks[ticks.length - 1] >= minGap) ticks.push(raw[i]);
+  }
+  return ticks;
+}
+
+function fmtTickDate(dateStr, mode) {
+  const d = new Date(dateStr + "T00:00:00");
+  if (mode === "month") return d.toLocaleDateString("en-US", { month: "short" });
+  const [, m, day] = dateStr.split("-");
+  return `${m}/${day}`;
+}
+
+function comboFundamentalsSvg(periods, id) {
+  const hasRevNi = periods.filter(p => p.revenue != null || p.net_income != null).length >= 2;
+  const marginCoordsRaw = periods.filter(p => p.gross_margin != null);
+  if (!hasRevNi && marginCoordsRaw.length < 2) {
+    return `<div class="subtext" style="font-size:11px">Not enough data</div>`;
+  }
+
+  const W = 720, H = 300;
+  const padTop = 46, barsH = 150, negReserve = 32, labelY = H - 14, marginLabelY = 20;
+  const baseline = padTop + barsH;
+  const marginPlotTop = padTop + 14;
+  const marginPlotBottom = baseline - 14;
+  const marginPlotH = marginPlotBottom - marginPlotTop;
+
+  const n = periods.length;
+  const groupW = W / n;
+  const barW   = groupW * 0.26;
+  const gapBar = 8;
+
+  const barsMaxAbs = Math.max(
+    ...periods.map(p => Math.abs(p.revenue ?? 0)),
+    ...periods.map(p => Math.abs(p.net_income ?? 0)),
+    1e-9
+  );
+
+  const bar = (val, x, color, label) => {
+    if (val == null) return "";
+    const neg = val < 0;
+    const h = (Math.abs(val) / barsMaxAbs) * (neg ? negReserve : barsH);
+    const y = neg ? baseline : baseline - h;
+    const ly = neg ? y + h + 16 : y - 8;
+    return `
+      <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(h, 1).toFixed(1)}" rx="3" fill="${color}"><title>${label}: ${fmtCompact(val)}</title></rect>
+      <text x="${(x + barW / 2).toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" class="trend-bar-label">${fmtCompact(val)}</text>`;
+  };
+
+  const barsSvg = periods.map((p, i) => {
+    const cx = groupW * i + groupW / 2;
+    const rx = cx - barW - gapBar / 2;
+    const nx = cx + gapBar / 2;
+    return `
+      ${bar(p.revenue,    rx, "var(--blue)", p.label)}
+      ${bar(p.net_income, nx, p.net_income >= 0 ? "var(--green)" : "var(--red)", p.label)}
+      <text x="${cx.toFixed(1)}" y="${labelY}" text-anchor="middle" class="trend-axis-label">${p.label}</text>`;
+  }).join("");
+
+  const baselineLine = `<line x1="0" y1="${baseline}" x2="${W}" y2="${baseline}" stroke="var(--border)" stroke-width="1"></line>`;
+
+  let marginSvg = "";
+  if (marginCoordsRaw.length >= 2) {
+    const marginCoords = periods.map((p, i) => p.gross_margin == null ? null : {
+      x: groupW * i + groupW / 2,
+      v: p.gross_margin,
+    }).filter(Boolean);
+    const vals = marginCoords.map(c => c.v);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const range = (max - min) || 1;
+    const coords = marginCoords.map(c => ({ x: c.x, v: c.v, y: marginPlotBottom - ((c.v - min) / range) * marginPlotH }));
+    const pathD = coords.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+    const dots  = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3" fill="var(--text)" stroke="var(--bg)" stroke-width="1.5"></circle>`).join("");
+    const labels = coords.map(c => `<text x="${c.x.toFixed(1)}" y="${marginLabelY}" text-anchor="middle" class="trend-margin-label">${(c.v * 100).toFixed(0)}%</text>`).join("");
+    marginSvg = `<path d="${pathD}" fill="none" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="5 3" stroke-linecap="round" stroke-linejoin="round"></path>${dots}${labels}`;
+  }
+
+  return `<svg id="${id}" class="trend-svg" viewBox="0 0 ${W} ${H}">${baselineLine}${barsSvg}${marginSvg}</svg>`;
+}
+
+function priceLineSvg(points, id, mode) {
+  if (points.length < 2) return `<div class="subtext" style="font-size:11px">Not enough data</div>`;
+  const W = 720, H = 300;
+  const padTop = 44, padBottom = 46, padXL = 54, padXR = 16;
+  const plotTop = padTop, plotBottom = H - padBottom;
+  const plotH = plotBottom - plotTop;
+  const plotW = W - padXL - padXR;
+  const closes = points.map(p => p.close);
+  const min = Math.min(...closes), max = Math.max(...closes);
+  const range = (max - min) || 1;
+  const gap = plotW / (points.length - 1);
+
+  chartRegistry[id] = { points, padX: padXL, gap, plotTop, plotH, min, range, W, kind: "price" };
+
+  const coords = points.map((p, i) => ({
+    x: padXL + gap * i,
+    y: plotTop + plotH - ((p.close - min) / range) * plotH,
+  }));
+
+  const first = closes[0], last = closes[closes.length - 1];
+  const color = last >= first ? "var(--green)" : "var(--red)";
+  const pathD = coords.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+  const areaD = `${pathD} L${coords[coords.length - 1].x.toFixed(1)},${plotBottom} L${coords[0].x.toFixed(1)},${plotBottom} Z`;
+
+  const mid = (max + min) / 2;
+  const yGrid = [max, mid, min].map(v => {
+    const y = plotTop + plotH - ((v - min) / range) * plotH;
+    return `
+      <line x1="${padXL}" y1="${y.toFixed(1)}" x2="${W - padXR}" y2="${y.toFixed(1)}" class="chart-gridline"></line>
+      <text x="${(padXL - 8).toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="end" class="trend-axis-label">$${v.toFixed(0)}</text>`;
+  }).join("");
+
+  const ticks = calendarTicks(points, mode);
+  const xGrid = ticks.map(i => {
+    const x = padXL + gap * i;
+    return `
+      <line x1="${x.toFixed(1)}" y1="${plotTop}" x2="${x.toFixed(1)}" y2="${plotBottom}" class="chart-gridline"></line>
+      <text x="${x.toFixed(1)}" y="${(plotBottom + 16).toFixed(1)}" text-anchor="middle" class="trend-axis-label">${fmtTickDate(points[i].date, mode)}</text>`;
+  }).join("");
+
+  const pctChange = ((last - first) / first) * 100;
+  const changeLabel = `${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(1)}%`;
+  const last0 = coords[coords.length - 1];
+
+  return `<svg id="${id}" class="trend-svg" viewBox="0 0 ${W} ${H}" onmousemove="priceChartHover(event,'${id}')" onmouseleave="chartHoverEnd('${id}')">
+    ${yGrid}
+    ${xGrid}
+    <path d="${areaD}" fill="${color}" fill-opacity="0.12" stroke="none"></path>
+    <path d="${pathD}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+    <circle cx="${last0.x.toFixed(1)}" cy="${last0.y.toFixed(1)}" r="3" fill="${color}"></circle>
+    <line id="${id}-cross" class="chart-crosshair" x1="0" y1="${plotTop}" x2="0" y2="${plotBottom}" style="display:none"></line>
+    <circle id="${id}-dot" class="chart-hover-dot" r="4" fill="var(--text)" stroke="${color}" stroke-width="2" style="display:none"></circle>
+    <text x="${padXL}" y="20" text-anchor="start" class="trend-point-label" style="fill:${color}">${changeLabel}</text>
+  </svg>`;
+}
+
+function rangeBar(lo, hi, markers, loLabel, hiLabel) {
+  if (lo == null || hi == null || hi <= lo) return "";
+  const dots = markers
+    .filter(m => m.value != null)
+    .map(m => {
+      const rawPct = ((m.value - lo) / (hi - lo)) * 100;
+      const outOfRange = rawPct < 0 || rawPct > 100;
+      const clamped = Math.max(0, Math.min(100, rawPct));
+      const cls = outOfRange ? "range-marker-out" : m.cls;
+      const title = outOfRange ? `${m.title} (out of range)` : m.title;
+      const edgeCls = outOfRange ? (rawPct < 0 ? " range-marker-label-left" : " range-marker-label-right") : "";
+      const label = m.label ? `<span class="range-marker-label${edgeCls}">${m.label}</span>` : "";
+      return `<div class="range-marker ${cls}" style="left:${clamped.toFixed(1)}%" title="${title}">${label}</div>`;
+    })
+    .join("");
+  return `
+    <div class="range-bar-row">
+      <span class="range-edge-label">${loLabel}</span>
+      <div class="range-track">${dots}</div>
+      <span class="range-edge-label">${hiLabel}</span>
+    </div>`;
+}
+
+function statColumn(label, valueHtml, extraClass = "") {
+  return `<div class="stat-col ${extraClass}">
+    ${valueHtml}
+    <div class="range-title">${label}</div>
+  </div>`;
+}
+
+function changeVal(v) {
+  const cls = v == null ? "s-null" : v >= 0 ? "s-green" : "s-red";
+  return `<span class="poc-val ${cls}">${fmtPctSigned(v)}</span>`;
+}
+
+function renderPriceOverview(snap, returns) {
+  if (!snap || snap.price == null) return "";
+  const price = snap.price;
+  const fmt$ = v => v != null ? `$${v.toFixed(v >= 100 ? 0 : 2)}` : "—";
+
+  const dayPct  = snap.day_change_pct != null ? snap.day_change_pct / 100 : null;
+  const weekPct = returns?.ticker_return_1w ?? null;
+  const athPct  = (snap.ath && price) ? (price - snap.ath) / snap.ath : null;
+
+  const currentCol = statColumn("Current", `<div class="price-overview-price">${fmt$(price)}</div>`);
+  const dayCol     = statColumn("Day",     changeVal(dayPct));
+  const weekCol    = statColumn("Week",    changeVal(weekPct));
+  const athCol     = statColumn("ATH",     changeVal(athPct));
+
+  const w52Bar = rangeBar(
+    snap.week52_low, snap.week52_high,
+    [{ value: price, cls: "range-marker-current", title: `Current ${fmt$(price)}`, label: fmt$(price) }],
+    fmt$(snap.week52_low), fmt$(snap.week52_high)
+  );
+
+  const hasTargets = snap.target_low != null && snap.target_high != null;
+  const analystBarHtml = hasTargets ? rangeBar(
+    snap.target_low, snap.target_high,
+    [
+      { value: snap.target_mean, cls: "range-marker-target",  title: `Analyst Target Mean ${fmt$(snap.target_mean)}`, label: fmt$(snap.target_mean) },
+      { value: price,            cls: "range-marker-current", title: `Current ${fmt$(price)}`, label: fmt$(price) },
+    ],
+    fmt$(snap.target_low), fmt$(snap.target_high)
+  ) : "";
+
+  if (!w52Bar && !analystBarHtml) return "";
+
+  return `
+    <div class="price-overview">
+      ${currentCol}
+      ${dayCol}
+      ${weekCol}
+      ${athCol}
+      <div class="range-group">
+        ${w52Bar || `<div class="subtext" style="font-size:11px">No data</div>`}
+        <div class="range-title">52W Range</div>
+      </div>
+      <div class="range-group">
+        ${analystBarHtml || `<div class="subtext" style="font-size:11px">No analyst data</div>`}
+        <div class="range-title">Analyst Target</div>
+      </div>
+    </div>`;
+}
+
+function renderPriceCharts(points, ticker) {
+  const monthPoints = points.slice(-22);
+  return `
+    <div class="trend-chart">
+      <div class="trend-chart-title">Price — 1 Year</div>
+      ${priceLineSvg(points, `${ticker}-price1y`, "month")}
+    </div>
+    <div class="trend-chart">
+      <div class="trend-chart-title">Price — 1 Month</div>
+      ${priceLineSvg(monthPoints, `${ticker}-price1m`, "week")}
+    </div>`;
+}
+
+async function loadPriceTrend(ticker) {
+  const el = document.getElementById(`price-trend-${ticker}`);
+  if (!el) return;
+
+  if (priceHistoryCache[ticker]) {
+    el.innerHTML = renderPriceCharts(priceHistoryCache[ticker], ticker);
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/price-history/${encodeURIComponent(ticker)}?period=1y`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const points = data.points || [];
+    if (points.length < 2) {
+      el.innerHTML = `<div class="trend-chart"><div class="subtext" style="font-size:11px">No price history</div></div>`;
+      return;
+    }
+    priceHistoryCache[ticker] = points;
+    el.innerHTML = renderPriceCharts(points, ticker);
+  } catch (e) {
+    el.innerHTML = `<div class="trend-chart"><div class="subtext" style="font-size:11px">Failed to load price history</div></div>`;
+    console.error(e);
+  }
+}
+
+function shortQLabel(period) {
+  const m = /^(\d{4})-Q(\d)$/.exec(period);
+  return m ? `Q${m[2]} '${m[1].slice(2)}` : period;
+}
+
+function renderTrajectorySection(tickers, raw) {
+  const blocks = tickers.map(ticker => {
+    const d = raw[ticker];
+    if (!d) return "";
+
+    const annuals     = [...(d.annuals || [])].reverse().map(a => ({ ...a, label: a.period }));
+    const quarterlies = [...(d.quarterlies || [])].reverse().map(a => ({ ...a, label: shortQLabel(a.period) }));
+
+    const annualChart    = comboFundamentalsSvg(annuals, `${ticker}-fundAnnual`);
+    const quarterlyChart = comboFundamentalsSvg(quarterlies, `${ticker}-fundQuarterly`);
+
+    return `
+      <div class="score-ticker-block">
+        ${renderPriceOverview(d.snapshot, d.returns)}
+        <div class="trend-grid" id="price-trend-${ticker}">
+          <div class="trend-chart"><div class="trend-chart-title">Price — 1 Year</div><div class="subtext" style="font-size:11px">Loading…</div></div>
+          <div class="trend-chart"><div class="trend-chart-title">Price — 1 Month</div><div class="subtext" style="font-size:11px">Loading…</div></div>
+        </div>
+        <div class="trend-subhead">Fundamentals <span class="mini-legend">
+          <span class="mini-legend-item"><span class="mini-legend-dot" style="background:var(--blue)"></span>Revenue</span>
+          <span class="mini-legend-item"><span class="mini-legend-dot" style="background:var(--green)"></span>Net Income</span>
+          <span class="mini-legend-item"><span class="mini-legend-line"></span>Gross Margin</span>
+        </span></div>
+        <div class="trend-grid">
+          <div class="trend-chart"><div class="trend-chart-title">Annual</div>${annualChart}</div>
+          <div class="trend-chart"><div class="trend-chart-title">Quarterly</div>${quarterlyChart}</div>
+        </div>
+      </div>`;
+  }).join("");
+
+  if (!blocks) return "";
+
+  return `
+    <section class="cat-section">
+      <h2>Trajectory</h2>
+      ${blocks}
+    </section>`;
+}
+
+function renderAnalystSummary(tickers, raw) {
+  const t0   = tickers[0];
+  const snap = raw[t0]?.snapshot;
+  if (!snap) return "";
+
+  const price  = snap.price;
+  const target = snap.target_mean;
+  const upside = (price && target) ? (target / price - 1) : null;
+
+  const hasAnalyst = snap.analyst_count != null || upside != null;
+  const hasShort   = snap.short_ratio != null || snap.short_percent_of_float != null;
+  if (!hasAnalyst && !hasShort) return "";
+
+  const bar = analystBar(snap.rec_strong_buy, snap.rec_buy, snap.rec_hold, snap.rec_sell, snap.rec_strong_sell, 320);
+
+  return `
+    <section class="cat-section">
+      <h2>Analyst &amp; Short Interest</h2>
+      <div class="insider-summary">
+        <div class="insider-stat"><span class="insider-stat-label">Analyst Upside</span><span class="insider-stat-val ${upside != null ? pctScoreColor(upside, 0.30) : "s-null"}">${fmtPctSigned(upside)}</span></div>
+        <div class="insider-stat"><span class="insider-stat-label">Target Mean</span><span class="insider-stat-val">${target != null ? "$" + target.toFixed(2) : "—"}</span></div>
+        <div class="insider-stat"><span class="insider-stat-label">Short % Float</span><span class="insider-stat-val">${fmtPctLevel(snap.short_percent_of_float)}</span></div>
+        <div class="insider-stat"><span class="insider-stat-label">Days to Cover</span><span class="insider-stat-val">${snap.short_ratio != null ? snap.short_ratio.toFixed(1) : "—"}</span></div>
+      </div>
+      ${bar ? `<div style="margin-top:12px">${bar}</div>` : ""}
     </section>`;
 }
 
@@ -801,9 +1241,9 @@ function renderInsiderSummary(tickers, raw) {
   const sells  = recent.filter(tx => (tx.trade_type || "").startsWith("S")).length;
 
   const ic    = raw[t0]?.scores?.insider_conviction || {};
-  const s3m   = ic.sub_scores?.score_3m;
-  const scoreHtml = s3m != null
-    ? `<span class="${s3m > 20 ? "s-green" : s3m < -20 ? "s-red" : "s-yellow"}">${s3m > 0 ? "+" : ""}${s3m.toFixed(0)}</span>`
+  const icSc  = ic.score;
+  const scoreHtml = icSc != null
+    ? `<span class="${scoreColor(icSc)}">${icSc.toFixed(0)}</span>`
     : "—";
 
   const rows = txs.slice(0, 8).map(tx => {
@@ -850,22 +1290,30 @@ function render(tickers, raw) {
   const dashboard = document.getElementById("dashboard");
   dashboard.innerHTML = [
     renderScoreCards(tickers, raw),
+    renderTrajectorySection(tickers, raw),
+    renderAnalystSummary(tickers, raw),
     renderInsiderSummary(tickers, raw),
-    renderRawTable(tickers, raw),
-    renderFundamentalsTable(tickers, raw),
   ].join("");
 }
 
 // ── Home view ─────────────────────────────────────────────────────────────────
 let portfolio = [];
-let pfSortCol = "composite", pfSortDir = -1;
-let wlSortCol = "composite", wlSortDir = -1;
+let portfolioHoldings = {};
+let portfolioData = {};
+let editingTicker = null;
+let pfSortCol = sessionStorage.getItem("pfSortCol") ?? "total";
+let pfSortDir = Number(sessionStorage.getItem("pfSortDir") ?? -1);
+let wlSortCol = sessionStorage.getItem("wlSortCol") ?? "ticker";
+let wlSortDir = Number(sessionStorage.getItem("wlSortDir") ?? 1);
+let lastDetail = null;
+let priceHistoryCache = {};
 
 async function loadLists() {
   const res = await fetch("/api/lists");
   const data = await res.json();
   watchlist = data.watchlist;
   portfolio = data.portfolio;
+  portfolioHoldings = data.portfolio_holdings || {};
 }
 
 function getScore(d, col) {
@@ -879,14 +1327,14 @@ function getScore(d, col) {
     case "day_change":       return snap.day_change_pct   ?? null;
     case "week_change":      return ret.ticker_return_1w  ?? null;
     case "year_change":      return ret.ticker_return_12m ?? null;
-    case "ath":              return snap.ath              ?? null;
+    case "ath":              return snap.week52_high       ?? null;
+    case "buy_target":       return s.buy_target?.pct_from_current ?? null;
     case "growth":           return s.fundamental_momentum?.score ?? null;
     case "quality":          return s.value_quality?.score        ?? null;
     case "insiders":         return s.insider_conviction?.score   ?? null;
-    case "price_short":      return s.price_short?.score          ?? null;
     case "price_long":       return s.price_long?.score           ?? null;
-    case "composite_short":  return s.composite_short?.score      ?? null;
     case "composite_long":   return s.composite_long?.score       ?? null;
+    case "score_delta":      return d.score_change?.composite?.delta ?? null;
     default: return null;
   }
 }
@@ -897,11 +1345,15 @@ function _toggleSort(currentCol, currentDir, col) {
 
 function setPfSort(col) {
   [pfSortCol, pfSortDir] = _toggleSort(pfSortCol, pfSortDir, col);
+  sessionStorage.setItem("pfSortCol", pfSortCol);
+  sessionStorage.setItem("pfSortDir", pfSortDir);
   renderHomeSections();
 }
 
 function setWlSort(col) {
   [wlSortCol, wlSortDir] = _toggleSort(wlSortCol, wlSortDir, col);
+  sessionStorage.setItem("wlSortCol", wlSortCol);
+  sessionStorage.setItem("wlSortDir", wlSortDir);
   renderHomeSections();
 }
 
@@ -910,40 +1362,34 @@ const PRICE_COLS = [
   { key: "day_change",    label: "Day %"  },
   { key: "week_change",   label: "1W %"   },
   { key: "year_change",   label: "52W %"  },
-  { key: "ath",           label: "ATH"    },
+  { key: "ath",           label: "52W Hi" },
+  { key: "buy_target",    label: "Buy Target" },
 ];
 
 const SCORE_COLS_INTERMEDIATE = [
   { key: "growth",      label: "Growth"    },
   { key: "quality",     label: "Quality"   },
   { key: "insiders",    label: "Insiders"  },
-  { key: "price_short", label: "P.Short"   },
-  { key: "price_long",  label: "P.Long"    },
+  { key: "price_long",  label: "Sentimiento" },
 ];
 
 const SCORE_COLS_FINAL = [
-  { key: "composite_short", label: "Short" },
   { key: "composite_long",  label: "Long"  },
 ];
 
 const SCORE_COLS = [...SCORE_COLS_INTERMEDIATE, ...SCORE_COLS_FINAL];
 
-const STATUS_LIGHTS = [
-  { key: "snap",  title: "Snapshot (price & market data)" },
-  { key: "fund",  title: "Fundamentals annual"            },
-  { key: "qtrs",  title: "Quarterlies (≥2 quarters)"     },
-  { key: "ins",   title: "Insider transactions"           },
-  { key: "score", title: "Score computed"                 },
-];
-
-function renderStatusLights(status) {
-  if (!status) return `<div class="status-lights">${STATUS_LIGHTS.map(() => `<span class="sl sl-gray"></span>`).join("")}</div>`;
-  return `<div class="status-lights">${STATUS_LIGHTS.map(l =>
-    `<span class="sl sl-${status[l.key] || "gray"}" title="${l.title}"></span>`
-  ).join("")}</div>`;
+// One compact symbol per row: fetch in progress / all good / something failed.
+function renderStatusSymbol(status) {
+  if (!status) return `<span class="subtext" title="Pendiente">·</span>`;
+  const states = ["snap", "fund", "qtrs", "ins", "score"].map(k => status[k]);
+  if (states.includes("yellow")) return `<span class="s-yellow" title="En proceso">⟳</span>`;
+  if (states.includes("red"))    return `<span class="s-red" title="Falló un fetch">✕</span>`;
+  if (status.score === "green")  return `<span class="s-green" title="OK">✓</span>`;
+  return `<span class="subtext" title="Datos parciales">·</span>`;
 }
 
-function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
+function renderTickerTable(tickers, sc, sd, sortFnName, actionCell, pfCols = false) {
   const sorted = [...tickers].sort((a, b) => {
     if (sc === "ticker") return a.localeCompare(b) * sd;
     const va = getScore(watchlistData[a], sc);
@@ -960,7 +1406,6 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
     return `<th class="sortable-th${active ? " sort-active" : ""}" onclick="${sortFnName}('${c.key}')">${c.label}${arrow}</th>`;
   };
 
-  const lightsHeader = STATUS_LIGHTS.map(l => l.key[0].toUpperCase()).join(" ");
   const sepTh = (c, extra = "") =>
     `<th class="col-sep ${extra} sortable-th${c.key === sc ? " sort-active" : ""}" onclick="${sortFnName}('${c.key}')">${c.label}${c.key === sc ? (sd > 0 ? " ↑" : " ↓") : ""}</th>`;
 
@@ -970,6 +1415,12 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
     return `<th class="${extraClass} sortable-th${active ? " sort-active" : ""}" onclick="${sortFnName}('${key}')">${label}${arrow}</th>`;
   };
 
+  const pfHeaders = pfCols ? `
+    <th class="col-sep pf-col" style="text-align:right">Avg Cost</th>
+    <th class="pf-col" style="text-align:right">Shares</th>
+    <th class="pf-col" style="text-align:right">Total</th>
+    <th class="pf-col" style="text-align:right">Diff</th>` : "";
+
   const head = `<thead><tr>
     ${sortTh("ticker", "Ticker", "col-ticker")}
     <th style="text-align:left">Sector</th>
@@ -977,17 +1428,19 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
     ${sortTh("day_change",  "Day %")}
     ${sortTh("week_change", "1W %")}
     ${sortTh("year_change", "52W %")}
-    ${sortTh("ath",         "ATH")}
+    ${sortTh("ath",         "52W Hi")}
+    ${sortTh("buy_target",  "Buy Target")}
+    ${pfHeaders}
     ${SCORE_COLS_INTERMEDIATE.map((c, i) => i === 0 ? sepTh(c) : thCell(c)).join("")}
     ${SCORE_COLS_FINAL.map((c, i) => i === 0 ? sepTh(c, "col-final") : `<th class="col-final sortable-th${c.key === sc ? " sort-active" : ""}" onclick="${sortFnName}('${c.key}')">${c.label}${c.key === sc ? (sd > 0 ? " ↑" : " ↓") : ""}</th>`).join("")}
+    ${sortTh("score_delta", "Δ7d", "col-sep")}
     <th class="col-sep">Updated</th>
-    <th title="${STATUS_LIGHTS.map(l => l.key[0].toUpperCase() + "=" + l.title).join(" · ")}" style="cursor:default">${lightsHeader}</th>
+    <th title="Estado de datos" style="text-align:center;cursor:default">·</th>
     <th></th>
   </tr></thead>`;
 
   const rows = sorted.map(ticker => {
     const d      = watchlistData[ticker];
-    const status = tickerStatus[ticker];
     const snap   = d?.snapshot || {};
     const name   = snap?.name   || null;
     const sector = snap?.sector || "—";
@@ -997,7 +1450,7 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
         onmouseleave="hideTooltip()">
       <div>
         <span class="ticker-link" onclick="navigate('#ticker/${ticker}')">${ticker}</span>
-        ${d ? `<span class="action-badge action-${d.data_ready ? (d.scores?.composite_short?.action || "NA") : "?"}" style="margin-left:6px">${d.data_ready ? (d.scores?.composite_short?.action || "NA") : "?"}</span>` : ""}
+        ${d ? `<span style="margin-left:6px">${d.data_ready ? actionBadge(d.scores) : `<span class="action-badge action-NA">?</span>`}</span>` : ""}
       </div>
       ${name ? `<div class="ticker-company">${name}</div>` : ""}
     </td>`;
@@ -1007,10 +1460,12 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
         ${tickerCell}
         <td class="td-sector">—</td>
         <td colspan="${PRICE_COLS.length}" class="col-sep subtext" style="font-size:11px">No data</td>
+        ${pfCols ? `<td colspan="4" class="col-sep pf-col subtext">—</td>` : ""}
         <td colspan="${SCORE_COLS_INTERMEDIATE.length}" class="col-sep subtext">—</td>
         <td colspan="${SCORE_COLS_FINAL.length}" class="col-sep subtext">—</td>
         <td class="col-sep subtext">—</td>
-        <td>${renderStatusLights(status)}</td>
+        <td class="col-sep subtext">—</td>
+        <td style="text-align:center">${renderStatusSymbol(tickerStatus[ticker])}</td>
         <td>${actionCell(ticker)}</td>
       </tr>`;
     }
@@ -1018,20 +1473,35 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
     const ready = d.data_ready;
     const ret   = d?.returns  || {};
 
-    const fmtPct = (v, th = 0.05) => {
+    const fmtPct = (v, scale = 0.15) => {
       if (v == null) return "—";
-      const cls = v >= th ? "s-green" : v <= -th ? "s-red" : "s-yellow";
-      return `<span class="${cls}">${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%</span>`;
+      return `<span class="${pctScoreColor(v, scale)}">${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%</span>`;
     };
-    const fmtDay = v => fmtPct(v, 0.01);
+    const fmtDay = v => fmtPct(v, 0.03);
     const fmtPrice = v => v != null ? `$${v.toFixed(2)}` : "—";
+
+    const buyTarget = d.scores?.buy_target;
+    const fmtBuyTarget = bt => {
+      if (!bt || bt.price == null) return "—";
+      const thr = `<span class="subtext" style="font-size:10px">≤ $${bt.price.toFixed(2)}</span>`;
+      if (bt.signal === "buy") {
+        return `<span class="s-green" style="font-weight:600">COMPRAR</span> ${thr}`;
+      }
+      const pct = bt.pct_from_current;
+      const near = pct != null && pct >= -0.04;
+      const cls = near ? "s-yellow" : "s-red";
+      const label = near ? "CASI" : "ESPERAR";
+      const dip = pct != null ? `${(pct * 100).toFixed(0)}%` : "";
+      return `<span class="${cls}" style="font-weight:600">${label} ${dip}</span> ${thr}`;
+    };
 
     const priceCells = `
       <td class="col-sep" style="font-variant-numeric:tabular-nums">${fmtPrice(snap.price)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtDay(snap.day_change_pct != null ? snap.day_change_pct / 100 : null)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_1w)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_12m)}</td>
-      <td style="font-variant-numeric:tabular-nums">${snap.ath != null ? `$${snap.ath.toFixed(2)}` : "—"}</td>
+      <td style="font-variant-numeric:tabular-nums">${snap.week52_high != null ? `$${snap.week52_high.toFixed(2)}` : "—"}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtBuyTarget(buyTarget)}</td>
     `;
 
     const makeScoreCell = (c, extraClass = "") => {
@@ -1044,26 +1514,264 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell) {
         onmouseleave="hideTooltip()">${s != null ? s.toFixed(1) : "—"}</td>`;
     };
 
+    const deltaCell = (() => {
+      const delta = d.score_change?.composite?.delta;
+      if (!ready || delta == null) return `<td class="s-null col-sep"
+        onmouseenter="showDeltaTooltip(event,'${ticker}')"
+        onmouseleave="hideTooltip()">—</td>`;
+      const cls  = delta > 0.05 ? "s-green" : delta < -0.05 ? "s-red" : "s-yellow";
+      const sign = delta > 0 ? "+" : "";
+      return `<td class="${cls} col-sep"
+        onmouseenter="showDeltaTooltip(event,'${ticker}')"
+        onmouseleave="hideTooltip()">${sign}${delta.toFixed(1)}</td>`;
+    })();
+
     const intermediateCells = SCORE_COLS_INTERMEDIATE.map((c, i) => makeScoreCell(c, i === 0 ? "col-sep" : "")).join("");
     const finalCells        = SCORE_COLS_FINAL.map((c, i) => makeScoreCell(c, i === 0 ? "col-sep col-final" : "col-final")).join("");
 
     const refreshed = timeAgo(d.refreshed_at);
 
+    let pfCells = "";
+    if (pfCols) {
+      const holding  = portfolioHoldings[ticker] || {};
+      const avgCost  = holding.avg_cost;
+      const shares   = holding.shares;
+      const price    = snap.price;
+      const total    = (shares != null && price != null) ? shares * price : null;
+      const diffAbs  = (avgCost != null && shares != null && price != null) ? (price - avgCost) * shares : null;
+      const diffPct  = (avgCost != null && price != null && avgCost > 0) ? (price - avgCost) / avgCost : null;
+      const isEditing = editingTicker === ticker;
+
+      const fmtAvgCost = v => v != null ? `$${Number(v).toFixed(2)}` : "—";
+      const fmtShares  = v => v != null ? Number(v).toLocaleString(undefined, {maximumFractionDigits: 4}) : "—";
+      const fmtTotal   = v => v != null ? `$${fmtRaw(v, "large")}` : "—";
+      const fmtDiff    = (pct, abs) => {
+        if (pct == null) return "—";
+        const cls  = pct > 0.001 ? "s-green" : pct < -0.001 ? "s-red" : "s-yellow";
+        const sign = pct >= 0 ? "+" : "";
+        const absFmt = abs != null ? ` <span class="subtext" style="font-size:10px">(${abs >= 0 ? "+" : ""}$${Math.abs(abs).toFixed(0)})</span>` : "";
+        return `<span class="${cls}">${sign}${(pct * 100).toFixed(1)}%</span>${absFmt}`;
+      };
+
+      const avgCostCell = isEditing
+        ? `<input class="pf-input" id="pf-avgcost-${ticker}" type="number" step="0.01" min="0" placeholder="Avg cost" value="${avgCost ?? ""}" onkeydown="if(event.key==='Enter') saveHolding('${ticker}')">`
+        : fmtAvgCost(avgCost);
+      const sharesCell = isEditing
+        ? `<input class="pf-input" id="pf-shares-${ticker}" type="number" step="1" min="0" placeholder="Shares" value="${shares ?? ""}" onkeydown="if(event.key==='Enter') saveHolding('${ticker}')">`
+        : fmtShares(shares);
+
+      pfCells = `
+        <td class="col-sep pf-col">${avgCostCell}</td>
+        <td class="pf-col">${sharesCell}</td>
+        <td class="pf-col">${fmtTotal(total)}</td>
+        <td class="pf-col">${fmtDiff(diffPct, diffAbs)}</td>`;
+    }
+
     return `<tr>
       ${tickerCell}
       <td class="td-sector">${sector}</td>
       ${priceCells}
+      ${pfCells}
       ${intermediateCells}
       ${finalCells}
+      ${deltaCell}
       ${ready
         ? `<td class="col-sep subtext">${refreshed}</td>`
         : `<td class="col-sep s-null" style="font-size:10px">loading…</td>`}
-      <td>${renderStatusLights(status)}</td>
+      <td style="text-align:center">${renderStatusSymbol(tickerStatus[ticker])}</td>
       <td style="text-align:right;white-space:nowrap">${actionCell(ticker)}</td>
     </tr>`;
   }).join("");
 
   return `<table class="watchlist-table">${head}<tbody>${rows}</tbody></table>`;
+}
+
+const PF_SORT_COLS = [
+  { key: "price",       label: "Price"      },
+  { key: "day_change",  label: "Day %"      },
+  { key: "week_change", label: "1W %"       },
+  { key: "year_change", label: "52W %"      },
+  { key: "ath",         label: "52W Hi"      },
+  { key: "pct_52w",    label: "vs 52W"      },
+  { key: "cost_basis",  label: "Cost Basis" },
+  { key: "shares",      label: "Shares"     },
+  { key: "total",       label: "Total"      },
+  { key: "diff_pct",    label: "Diff"       },
+];
+
+function getPfPrice(ticker, col) {
+  const d  = portfolioData[ticker];
+  const wd = watchlistData[ticker];
+  const price     = d?.price          ?? wd?.snapshot?.price;
+  const holding   = portfolioHoldings[ticker] || {};
+  const costBasis = holding.avg_cost  ?? null;
+  const shares    = holding.shares    ?? null;
+  const total     = (shares != null && price != null) ? shares * price : null;
+  const diffPct   = (costBasis != null && total != null && costBasis > 0) ? (total - costBasis) / costBasis : null;
+  switch (col) {
+    case "ticker":      return null;
+    case "price":       return price ?? null;
+    case "day_change":  return (d?.day_change_pct  ?? wd?.snapshot?.day_change_pct) ?? null;
+    case "week_change": return (d?.return_1w        ?? wd?.returns?.ticker_return_1w) ?? null;
+    case "year_change": return (d?.return_12m       ?? wd?.returns?.ticker_return_12m) ?? null;
+    case "ath":         return wd?.snapshot?.week52_high ?? null;
+    case "pct_52w":    return wd?.snapshot?.pct_from_52w_high ?? null;
+    case "cost_basis":  return costBasis;
+    case "shares":      return shares;
+    case "total":       return total;
+    case "diff_pct":    return diffPct;
+    default: return null;
+  }
+}
+
+function renderPortfolioTable(tickers) {
+  const sc = pfSortCol, sd = pfSortDir;
+
+  const sorted = [...tickers].sort((a, b) => {
+    if (sc === "ticker") return a.localeCompare(b) * sd;
+    const va = getPfPrice(a, sc);
+    const vb = getPfPrice(b, sc);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    return (va - vb) * sd;
+  });
+
+  const sortTh = (key, label, extraClass = "", style = "") => {
+    const active = key === sc;
+    const arrow  = active ? (sd > 0 ? " ↑" : " ↓") : "";
+    const styleAttr = style ? ` style="${style}"` : "";
+    return `<th class="${extraClass} sortable-th${active ? " sort-active" : ""}"${styleAttr} onclick="setPfSort('${key}')">${label}${arrow}</th>`;
+  };
+
+  const head = `<thead><tr>
+    ${sortTh("ticker",     "Ticker",     "col-ticker")}
+    ${sortTh("price",      "Price",      "col-sep")}
+    ${sortTh("day_change", "Day %")}
+    ${sortTh("week_change","1W %")}
+    ${sortTh("year_change","52W %")}
+    ${sortTh("ath",        "52W Hi")}
+    ${sortTh("pct_52w",   "vs 52W")}
+    ${sortTh("cost_basis", "Cost Basis", "col-sep pf-col", "text-align:right")}
+    ${sortTh("shares",     "Shares",     "pf-col",          "text-align:right")}
+    ${sortTh("total",      "Total",      "pf-col",          "text-align:right")}
+    ${sortTh("diff_pct",   "Diff",       "pf-col",          "text-align:right")}
+    <th class="col-sep" style="text-align:right">Updated</th>
+    <th></th>
+  </tr></thead>`;
+
+  const fmtPct = (v, scale = 0.15) => {
+    if (v == null) return "—";
+    return `<span class="${pctScoreColor(v, scale)}">${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%</span>`;
+  };
+  const fmtDay   = v => fmtPct(v, 0.03);
+  const fmtPrice = v => v != null ? `$${v.toFixed(2)}` : "—";
+
+  const rows = sorted.map(ticker => {
+    const pd      = portfolioData[ticker];
+    const wd      = watchlistData[ticker];
+    const holding = portfolioHoldings[ticker] || {};
+
+    const name      = wd?.snapshot?.name || pd?.name || null;
+    const isEditing = editingTicker === ticker;
+
+    const tickerCell = `<td class="td-ticker"
+        onmouseenter="${wd ? `showTooltip(event,'${ticker}')` : ''}"
+        onmouseleave="hideTooltip()">
+      <div>
+        <span class="ticker-link" onclick="navigate('#ticker/${ticker}')">${ticker}</span>
+        <span style="margin-left:6px">${actionBadge(wd?.scores)}</span>
+      </div>
+      ${name ? `<div class="ticker-company">${name}</div>` : ""}
+    </td>`;
+
+    const price      = pd?.price           ?? wd?.snapshot?.price;
+    const dayChg     = pd?.day_change_pct  ?? wd?.snapshot?.day_change_pct;
+    const ret1w      = pd?.return_1w       ?? wd?.returns?.ticker_return_1w;
+    const ret12m     = pd?.return_12m      ?? wd?.returns?.ticker_return_12m;
+    const ath        = wd?.snapshot?.week52_high ?? pd?.ath;
+    const pct52w     = wd?.snapshot?.pct_from_52w_high ?? null;
+    const refreshed  = pd ? timeAgo(pd.refreshed_at) : (wd?.refreshed_at ? timeAgo(wd.refreshed_at) : "—");
+
+    const priceCells = `
+      <td class="col-sep" style="font-variant-numeric:tabular-nums">${fmtPrice(price)}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtDay(dayChg != null ? dayChg / 100 : null)}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtPct(ret1w)}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtPct(ret12m)}</td>
+      <td style="font-variant-numeric:tabular-nums">${price != null && ath != null ? `$${ath.toFixed(2)}` : "—"}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtPct(pct52w, 0.30)}</td>`;
+
+    const costBasis = holding.avg_cost;
+    const shares    = holding.shares;
+    const total     = (shares != null && price != null) ? shares * price : null;
+    const diffAbs   = (costBasis != null && total != null) ? total - costBasis : null;
+    const diffPct   = (costBasis != null && total != null && costBasis > 0) ? (total - costBasis) / costBasis : null;
+
+    const fmtAvgCost = v => v != null ? `$${Number(v).toFixed(2)}` : "—";
+    const fmtShares  = v => v != null ? parseFloat(v).toString() : "—";
+    const fmtTotal   = v => v != null ? `$${Number(v).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "—";
+    const fmtDiff    = (pct, abs) => {
+      if (pct == null) return "—";
+      const sign = pct >= 0 ? "+" : "";
+      const absFmt = abs != null ? ` <span class="subtext" style="font-size:10px">(${abs >= 0 ? "+" : ""}$${Math.abs(abs).toFixed(0)})</span>` : "";
+      return `<span class="${pctScoreColor(pct, 0.30)}">${sign}${(pct * 100).toFixed(1)}%</span>${absFmt}`;
+    };
+
+    const costBasisCell = isEditing
+      ? `<input class="pf-input" id="pf-avgcost-${ticker}" type="number" step="0.01" min="0" placeholder="Cost basis" value="${costBasis ?? ""}" onkeydown="if(event.key==='Enter') saveHolding('${ticker}')">`
+      : fmtAvgCost(costBasis);
+    const sharesCell = isEditing
+      ? `<input class="pf-input" id="pf-shares-${ticker}" type="number" step="1" min="0" placeholder="Shares" value="${shares ?? ""}" onkeydown="if(event.key==='Enter') saveHolding('${ticker}')">`
+      : fmtShares(shares);
+
+    const holdingCells = `
+      <td class="col-sep pf-col">${costBasisCell}</td>
+      <td class="pf-col">${sharesCell}</td>
+      <td class="pf-col">${fmtTotal(total)}</td>
+      <td class="pf-col">${fmtDiff(diffPct, diffAbs)}</td>`;
+
+    const actionCell = isEditing
+      ? `<button class="btn-save" onclick="saveHolding('${ticker}')">✓ Save</button>
+         <button class="btn-remove" onclick="cancelEdit()">✕</button>`
+      : `<button class="btn-edit" onclick="editHolding('${ticker}')">Edit</button>
+         <button class="btn-move" title="Remove from portfolio" onclick="moveToWatchlist('${ticker}')">↓ WL</button>
+         <button class="btn-remove" onclick="removeTicker('${ticker}')">✕</button>`;
+
+    return `<tr>
+      ${tickerCell}
+      ${priceCells}
+      ${holdingCells}
+      <td class="col-sep subtext">${refreshed}</td>
+      <td style="text-align:right;white-space:nowrap">${actionCell}</td>
+    </tr>`;
+  }).join("");
+
+  return `<table class="watchlist-table">${head}<tbody>${rows}</tbody></table>`;
+}
+
+function editHolding(ticker) {
+  editingTicker = ticker;
+  renderHomeSections();
+}
+
+async function saveHolding(ticker) {
+  const avgCostEl = document.getElementById(`pf-avgcost-${ticker}`);
+  const sharesEl  = document.getElementById(`pf-shares-${ticker}`);
+  const avg_cost  = avgCostEl?.value !== "" ? parseFloat(avgCostEl.value) : null;
+  const shares    = sharesEl?.value  !== "" ? parseFloat(sharesEl.value)  : null;
+  await fetch(`/api/portfolio/${ticker}/holding`, {
+    method: "PATCH",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({avg_cost, shares}),
+  });
+  portfolioHoldings[ticker] = {avg_cost, shares};
+  editingTicker = null;
+  renderHomeSections();
+}
+
+function cancelEdit() {
+  editingTicker = null;
+  renderHomeSections();
 }
 
 function renderHomeSections() {
@@ -1077,12 +1785,17 @@ function renderHomeSections() {
   let html = "";
 
   if (portfolio.length) {
+    const pfTotal = portfolio.reduce((sum, t) => {
+      const price  = portfolioData[t]?.price ?? watchlistData[t]?.snapshot?.price;
+      const shares = portfolioHoldings[t]?.shares;
+      return (price != null && shares != null) ? sum + price * shares : sum;
+    }, 0);
+    const pfTotalStr = pfTotal > 0
+      ? `$${pfTotal.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+      : "";
     html += `<section class="cat-section watchlist-section">
-      <h2>Portfolio</h2>
-      ${renderTickerTable(portfolio, pfSortCol, pfSortDir, "setPfSort",
-        t => `<button class="btn-move" title="Move to watchlist" onclick="moveToWatchlist('${t}')">↓ WL</button>
-              <button class="btn-remove" onclick="removeTicker('${t}')">✕</button>`
-      )}
+      <h2>Portfolio ${pfTotalStr ? `<span class="pf-total-badge">${pfTotalStr}</span>` : ""}</h2>
+      ${renderPortfolioTable(portfolio)}
     </section>`;
   }
 
@@ -1090,8 +1803,11 @@ function renderHomeSections() {
     html += `<section class="cat-section watchlist-section">
       <h2>Watchlist</h2>
       ${renderTickerTable(watchlist, wlSortCol, wlSortDir, "setWlSort",
-        t => `<button class="btn-move" title="Move to portfolio" onclick="moveToPortfolio('${t}')">↑ PF</button>
-              <button class="btn-remove" onclick="removeTicker('${t}')">✕</button>`
+        t => `${!portfolio.includes(t)
+          ? `<button class="btn-move" title="Add to portfolio" onclick="moveToPortfolio('${t}')">↑ PF</button>`
+          : ""}
+              <button class="btn-remove" onclick="removeTicker('${t}')">✕</button>`,
+        false
       )}
     </section>`;
   }
@@ -1123,12 +1839,16 @@ async function showHome() {
   }
 
   try {
-    const [wlRes, stRes] = await Promise.all([
+    const [wlRes, pfRes, stRes] = await Promise.all([
       fetch("/api/watchlist?tickers=" + allTickers.join(",")),
+      fetch("/api/portfolio/prices"),
       fetch("/api/status?tickers="   + allTickers.join(",")),
     ]);
     watchlistData = await wlRes.json();
     tickerStatus  = await stRes.json();
+    const pfRaw   = await pfRes.json();
+    const { _running, ...pfPrices } = pfRaw;
+    portfolioData = pfPrices;
   } catch (e) {
     console.error("Home load failed:", e);
   }
@@ -1166,17 +1886,20 @@ async function removeTicker(ticker) {
   portfolio = portfolio.filter(t => t !== ticker);
   watchlist = watchlist.filter(t => t !== ticker);
   delete watchlistData[ticker];
+  delete portfolioHoldings[ticker];
+  if (editingTicker === ticker) editingTicker = null;
   renderHomeSections();
 }
 
 async function _moveTicker(ticker, targetList) {
   await fetch(`/api/lists/${ticker}?list_type=${targetList}`, {method: "PATCH"});
   if (targetList === "portfolio") {
-    watchlist = watchlist.filter(t => t !== ticker);
     if (!portfolio.includes(ticker)) portfolio.push(ticker);
+    portfolioHoldings[ticker] = { avg_cost: null, shares: null };
   } else {
     portfolio = portfolio.filter(t => t !== ticker);
-    if (!watchlist.includes(ticker)) watchlist.push(ticker);
+    delete portfolioHoldings[ticker];
+    if (editingTicker === ticker) editingTicker = null;
   }
   renderHomeSections();
 }
@@ -1196,8 +1919,10 @@ async function _fetchAndRenderDetail(ticker) {
   const raw = await res.json();
   const payload = raw[ticker];
   if (!payload) return;
+  lastDetail = { ticker, raw };
   renderHeader("detail", ticker, payload.refreshed_at);
   render([ticker], raw);
+  loadPriceTrend(ticker);
 }
 
 async function showDetail(ticker) {
@@ -1214,6 +1939,11 @@ async function showDetail(ticker) {
 }
 
 // ── Header ────────────────────────────────────────────────────────────────────
+function _isInFlight(status, ticker) {
+  const s = status[ticker];
+  return !!s && Object.values(s).includes("yellow");
+}
+
 async function handleRefreshAll() {
   const allTickers = [...new Set([...portfolio, ...watchlist])];
   if (!allTickers.length) return;
@@ -1222,15 +1952,28 @@ async function handleRefreshAll() {
 
   await fetch("/api/refresh", { method: "POST" }).catch(() => {});
 
+  // Full /api/watchlist recomputes scores for every tracked ticker — too heavy to
+  // re-poll wholesale every 2s. Instead poll the cheap /api/status, and only re-fetch
+  // watchlist data for tickers whose refresh just finished (in_flight -> not in_flight).
+  let prevStatus = { ...tickerStatus };
+
   while (true) {
     await new Promise(r => setTimeout(r, 2000));
     try {
-      const [wlRes, stRes] = await Promise.all([
-        fetch("/api/watchlist?tickers=" + allTickers.join(",")),
-        fetch("/api/status?tickers="   + allTickers.join(",")),
-      ]);
-      watchlistData = await wlRes.json();
-      tickerStatus  = await stRes.json();
+      const stRes = await fetch("/api/status?tickers=" + allTickers.join(","));
+      const newStatus = await stRes.json();
+
+      const justDone = allTickers.filter(
+        t => _isInFlight(prevStatus, t) && !_isInFlight(newStatus, t)
+      );
+
+      tickerStatus = newStatus;
+      prevStatus   = newStatus;
+
+      if (justDone.length) {
+        const wlRes = await fetch("/api/watchlist?tickers=" + justDone.join(","));
+        Object.assign(watchlistData, await wlRes.json());
+      }
     } catch (e) {
       console.error("Poll failed:", e);
     }
@@ -1238,7 +1981,59 @@ async function handleRefreshAll() {
     if (!tickerStatus._running) break;
   }
 
+  // Safety net: guarantee everything is current once the refresh is done, in case
+  // any ticker's in_flight window was missed between two 2s polls.
+  try {
+    const wlRes = await fetch("/api/watchlist?tickers=" + allTickers.join(","));
+    watchlistData = await wlRes.json();
+    renderHomeSections();
+  } catch (e) {
+    console.error("Final refresh failed:", e);
+  }
+
   if (btn) { btn.textContent = "↻ Refresh"; btn.disabled = false; btn.classList.remove("loading"); }
+}
+
+async function handleRescore() {
+  const allTickers = [...new Set([...portfolio, ...watchlist])];
+  if (!allTickers.length) return;
+  const btn = document.getElementById("rescore-btn");
+  if (btn) { btn.textContent = "⟲ …"; btn.disabled = true; btn.classList.add("loading"); }
+
+  try {
+    const wlRes = await fetch("/api/watchlist?tickers=" + allTickers.join(","));
+    watchlistData = await wlRes.json();
+    renderHomeSections();
+  } catch (e) {
+    console.error("Rescore failed:", e);
+  }
+
+  if (btn) { btn.textContent = "⟲ Rescore"; btn.disabled = false; btn.classList.remove("loading"); }
+}
+
+async function handleRefreshPortfolio() {
+  if (!portfolio.length) return;
+  const btn = document.getElementById("refresh-pf-btn");
+  if (btn) { btn.textContent = "↻ …"; btn.disabled = true; btn.classList.add("loading"); }
+
+  await fetch("/api/portfolio/refresh", { method: "POST" }).catch(() => {});
+
+  while (true) {
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      const res = await fetch("/api/portfolio/prices");
+      const raw = await res.json();
+      const { _running, ...pfPrices } = raw;
+      portfolioData = pfPrices;
+      renderHomeSections();
+      if (!_running) break;
+    } catch (e) {
+      console.error("Portfolio price poll failed:", e);
+      break;
+    }
+  }
+
+  if (btn) { btn.textContent = "↻ Portfolio"; btn.disabled = false; btn.classList.remove("loading"); }
 }
 
 async function loadVersionBadge() {
@@ -1261,8 +2056,9 @@ function renderHeader(mode, ticker, refreshedAt) {
   if (mode === "home") {
     header.innerHTML = `
 <div class="header-left">
-  <h1>StockDesk</h1>
+  <h1>Stocki</h1>
   <span id="yf-badge" class="yf-badge">yf …</span>
+  <button id="rescore-btn" class="btn btn-secondary" onclick="handleRescore()" title="Recompute scores from cached DB data — no external fetch">⟲ Rescore</button>
 </div>
 <div class="header-right">
   <div class="search-wrap">
@@ -1271,9 +2067,10 @@ function renderHeader(mode, ticker, refreshedAt) {
            onkeydown="if(event.key==='Enter') handleAddTicker()">
     <button class="btn" onclick="handleAddTicker()">+</button>
   </div>
-  <button id="refresh-all-btn" class="btn" onclick="handleRefreshAll()">↻ Refresh</button>
-  <button class="btn btn-secondary" onclick="triggerImport()" title="Replace all tickers from a CSV file">↑ Import</button>
-  <input id="import-file-input" type="file" accept=".txt,.csv" style="display:none" onchange="handleImportFile(event)">
+  <button id="refresh-all-btn" class="btn" onclick="handleRefreshAll()">↻ Watchlist</button>
+  <button id="refresh-pf-btn" class="btn btn-secondary" onclick="handleRefreshPortfolio()">↻ Portfolio</button>
+  <button class="btn btn-secondary" onclick="triggerImport()" title="Replace all tickers with a Yahoo Finance portfolio/watchlist CSV export (Yahoo Finance → Portfolio → Export)">↑ Import</button>
+  <input id="import-file-input" type="file" accept=".csv" style="display:none" onchange="handleImportFile(event)">
 </div>`;
     loadVersionBadge();
   } else {
@@ -1314,24 +2111,48 @@ function triggerImport() {
   if (input) input.click();
 }
 
+// Parses a Yahoo Finance portfolio/watchlist CSV export (Yahoo Finance → Portfolio →
+// Export). Expected header includes a "Symbol" column, e.g.:
+//   Symbol,Current Price,Date,Time,Change,Open,High,Low,Volume,Trade Date,...
+//   AAPL,213.4,2026/07/20,16:00 EDT,1.2,...
+// Only that column is used — the rest (price, volume, trade history) is ignored.
+function parseYahooCsv(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  if (!lines.length) return { tickers: [], error: "Empty file." };
+
+  const header = lines[0].split(",").map(h => h.trim().toLowerCase());
+  const symbolIdx = header.indexOf("symbol");
+  if (symbolIdx === -1) {
+    return { tickers: [], error: "This doesn't look like a Yahoo Finance export — expected a header row with a \"Symbol\" column. In Yahoo Finance: Portfolio → Export." };
+  }
+
+  const tickers = [...new Set(
+    lines.slice(1)
+      .map(line => (line.split(",")[symbolIdx] || "").trim().toUpperCase())
+      .filter(t => t.length > 0 && t.length <= 12 && !t.startsWith("^"))  // ^RUT etc. are indices, not tickers
+  )];
+  return { tickers, error: null };
+}
+
 async function handleImportFile(event) {
   const file = event.target.files[0];
   event.target.value = "";
   if (!file) return;
 
   const text = await file.text();
-  const tickers = text
-    .split(/[\s,;]+/)
-    .map(t => t.trim().toUpperCase())
-    .filter(t => t.length > 0 && t.length <= 10);
+  const { tickers, error } = parseYahooCsv(text);
 
+  if (error) {
+    alert(error);
+    return;
+  }
   if (!tickers.length) {
-    alert("No valid tickers found in file.");
+    alert("No valid tickers found in the Symbol column.");
     return;
   }
 
   const confirmed = confirm(
-    `⚠️ Warning: this will replace ALL current stocks with ${tickers.length} ticker(s) from the file.\n\n` +
+    `Warning: this will replace ALL current stocks with ${tickers.length} ticker(s) from the Yahoo Finance export.\n\n` +
     `Tickers: ${tickers.slice(0, 20).join(", ")}${tickers.length > 20 ? ` … (+${tickers.length - 20} more)` : ""}\n\n` +
     `Continue?`
   );
@@ -1356,6 +2177,7 @@ async function handleImportFile(event) {
 window.navigate         = navigate;
 window.handleAddTicker  = handleAddTicker;
 window.handleRefreshAll = handleRefreshAll;
+window.handleRescore = handleRescore;
 window.removeTicker     = removeTicker;
 window.moveToPortfolio  = moveToPortfolio;
 window.moveToWatchlist  = moveToWatchlist;
@@ -1365,4 +2187,9 @@ window.triggerImport    = triggerImport;
 window.handleImportFile = handleImportFile;
 window.showTooltip      = showTooltip;
 window.showScoreTooltip = showScoreTooltip;
+window.showDeltaTooltip = showDeltaTooltip;
 window.hideTooltip      = hideTooltip;
+window.editHolding           = editHolding;
+window.saveHolding           = saveHolding;
+window.cancelEdit            = cancelEdit;
+window.handleRefreshPortfolio = handleRefreshPortfolio;

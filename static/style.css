@@ -10,6 +10,13 @@
   --red:      #f85149;
   --blue:     #58a6ff;
   --null:     #484f58;
+
+  /* Score scale — 5 levels (0-20 / 20-40 / 40-60 / 60-80 / 80-100) */
+  --s1: #ff4444;
+  --s2: #ff8c00;
+  --s3: #fdd835;
+  --s4: #adde63;
+  --s5: #00c853;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -149,18 +156,6 @@ tbody td:first-child {
 
 tbody tr:hover td { background: rgba(255,255,255,0.02); }
 
-/* ── Section header rows ─────────────────────────────────── */
-.section-row td {
-  background: var(--surface2);
-  color: var(--subtext);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 5px 14px;
-  border-top: 1px solid var(--border);
-}
-
 /* ── Score row (category/final aggregates) ───────────────── */
 .score-row td {
   font-weight: 700;
@@ -179,6 +174,13 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 .s-red     { color: var(--red)     !important; }
 .s-null    { color: var(--null)    !important; }
 .s-missing { color: #8b5cf6        !important; }
+
+/* ── Score scale — 5 levels ──────────────────────────────── */
+.ic-l1 { color: var(--s1) !important; }
+.ic-l2 { color: var(--s2) !important; }
+.ic-l3 { color: var(--s3) !important; }
+.ic-l4 { color: var(--s4) !important; }
+.ic-l5 { color: var(--s5) !important; }
 
 /* ── Source link ─────────────────────────────────────────── */
 .src-link {
@@ -258,9 +260,205 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 }
 
 .score-card-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.stat-lbl {
   font-size: 10px;
   color: var(--subtext);
-  line-height: 1.5;
+  width: 82px;
+  flex-shrink: 0;
+}
+
+.stat-bar-wrap {
+  flex: 1;
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.stat-bar-fill { height: 100%; border-radius: 2px; }
+
+.stat-val {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  width: 58px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.card-badge {
+  align-self: flex-start;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 15%, transparent);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+/* ── Trajectory section ──────────────────────────────────── */
+.price-overview {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 20px;
+  margin-bottom: 14px;
+}
+
+.stat-col { display: flex; flex-direction: column; align-items: center; gap: 5px; flex-shrink: 0; text-align: center; }
+
+.price-overview-price {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.poc-val { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.range-group { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+
+.range-title {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--subtext);
+  text-align: center;
+}
+
+.range-bar-row { display: flex; align-items: flex-end; gap: 8px; margin-top: 16px; }
+
+.range-edge-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--subtext);
+  flex-shrink: 0;
+  width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+.range-edge-label:last-child { text-align: right; }
+
+.range-track {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  background: var(--surface2);
+  border-radius: 3px;
+}
+
+.range-marker {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--surface);
+}
+.range-marker-current { background: var(--blue); z-index: 2; }
+.range-marker-target   { background: var(--green); }
+
+.range-marker-label {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.range-marker-out { background: var(--s1); z-index: 3; }
+.range-marker-label-left  { left: 8px; transform: none; }
+.range-marker-label-right { left: auto; right: 8px; transform: none; }
+
+@media (max-width: 640px) {
+  .price-overview { flex-direction: column; align-items: stretch; gap: 14px; }
+}
+
+.trend-subhead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--subtext);
+  margin: 18px 0 8px;
+}
+.score-ticker-block .trend-subhead:first-child { margin-top: 0; }
+
+.mini-legend { display: flex; gap: 10px; font-weight: 500; text-transform: none; letter-spacing: normal; }
+.mini-legend-item { display: flex; align-items: center; gap: 4px; }
+.mini-legend-dot { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+.mini-legend-line { width: 10px; height: 0; border-top: 2px dashed var(--text); display: inline-block; }
+
+.trend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-bottom: 4px;
+}
+
+.trend-chart {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px 8px;
+}
+
+.trend-chart-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--subtext);
+  margin-bottom: 8px;
+}
+
+.trend-svg { width: 100%; height: auto; aspect-ratio: 2.4 / 1; display: block; overflow: visible; }
+.trend-bar-label, .trend-point-label {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.trend-axis-label { font-size: 10px; fill: var(--subtext); font-variant-numeric: tabular-nums; }
+.trend-margin-label {
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--text);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-gridline { stroke: var(--border); stroke-width: 1; opacity: 0.6; }
+.trend-svg[onmousemove] { cursor: crosshair; }
+.chart-crosshair { stroke: var(--border); stroke-width: 1; pointer-events: none; }
+.chart-hover-dot { pointer-events: none; }
+
+@media (max-width: 640px) {
+  .score-cards { grid-template-columns: repeat(2, 1fr); }
+  .trend-grid { grid-template-columns: 1fr; }
 }
 
 .action-badge {
@@ -271,14 +469,12 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
-.action-BUY  { background: rgba(63,185,80,0.18);   color: var(--green);   }
-.action-HOLD { background: rgba(210,153,34,0.18);  color: var(--yellow);  }
-.action-SELL { background: rgba(248,81,73,0.18);   color: var(--red);     }
-.action-NA   { background: rgba(139,148,158,0.15); color: var(--subtext); }
-
-@media (max-width: 640px) {
-  .score-cards { grid-template-columns: repeat(2, 1fr); }
-}
+.action-STRONG-BUY  { background: rgba(0,200,83,0.15);    color: var(--s5); }
+.action-BUY         { background: rgba(173,222,99,0.15);  color: var(--s4); }
+.action-HOLD        { background: rgba(253,216,53,0.12);  color: var(--s3); }
+.action-SELL        { background: rgba(255,140,0,0.15);   color: var(--s2); }
+.action-STRONG-SELL { background: rgba(255,68,68,0.15);   color: var(--s1); }
+.action-NA          { background: rgba(139,148,158,0.15); color: var(--subtext); }
 
 /* ── Insider summary strip ───────────────────────────────── */
 .insider-summary {
@@ -552,6 +748,25 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   flex-shrink: 0;
 }
 
+.tt-bonus-row {
+  border-top: 1px dashed var(--border);
+  margin-top: 2px;
+  padding-top: 6px;
+}
+
+.tt-bonus-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 15%, transparent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  width: 60px;
+  text-align: right;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
 /* ── Ticker company sub-line ─────────────────────────────────── */
 .ticker-company {
   font-size: 10px;
@@ -562,7 +777,7 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 110px;
 }
 
 /* ── Sector cell ─────────────────────────────────────────────── */
@@ -595,6 +810,61 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 .sl-yellow { background: var(--yellow); box-shadow: 0 0 4px rgba(210,153,34,0.6); }
 .sl-green  { background: var(--green); }
 .sl-red    { background: var(--red); }
+
+/* ── Portfolio holding columns ───────────────────────────────── */
+.pf-col {
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-input {
+  background: var(--surface2);
+  border: 1px solid var(--blue);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 12px;
+  width: 76px;
+  text-align: right;
+  outline: none;
+}
+.pf-input:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(88,166,255,0.2); }
+
+.btn-edit {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: inherit;
+  margin-right: 4px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.btn-edit:hover { color: var(--blue); border-color: var(--blue); }
+
+.pf-total-badge {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--subtext);
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+.btn-save {
+  background: rgba(63,185,80,0.12);
+  border: 1px solid rgba(63,185,80,0.3);
+  color: var(--green);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: inherit;
+  margin-right: 4px;
+  transition: background 0.12s;
+}
+.btn-save:hover { background: rgba(63,185,80,0.22); }
 
 /* ── Incomplete data warning badge ───────────────────────────── */
 .warn-badge {
