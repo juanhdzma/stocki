@@ -709,6 +709,20 @@ function riskFlags(scores) {
   ).join(" ");
 }
 
+function fmtBuyTargetHtml(bt) {
+  if (!bt || bt.price == null) return "—";
+  const thr = `<span class="subtext" style="font-size:10px">≤ $${bt.price.toFixed(2)}</span>`;
+  if (bt.signal === "buy") {
+    return `<span class="s-green" style="font-weight:600">COMPRAR</span> ${thr}`;
+  }
+  const pct = bt.pct_from_current;
+  const near = pct != null && pct >= -0.04;
+  const cls = near ? "s-yellow" : "s-red";
+  const label = near ? "CASI" : "ESPERAR";
+  const dip = pct != null ? `${(pct * 100).toFixed(0)}%` : "";
+  return `<span class="${cls}" style="font-weight:600">${label} ${dip}</span> ${thr}`;
+}
+
 
 
 function scoreLabel(s) {
@@ -1489,19 +1503,6 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell, pfCols = fal
     const fmtPrice = v => v != null ? `$${v.toFixed(2)}` : "—";
 
     const buyTarget = d.scores?.buy_target;
-    const fmtBuyTarget = bt => {
-      if (!bt || bt.price == null) return "—";
-      const thr = `<span class="subtext" style="font-size:10px">≤ $${bt.price.toFixed(2)}</span>`;
-      if (bt.signal === "buy") {
-        return `<span class="s-green" style="font-weight:600">COMPRAR</span> ${thr}`;
-      }
-      const pct = bt.pct_from_current;
-      const near = pct != null && pct >= -0.04;
-      const cls = near ? "s-yellow" : "s-red";
-      const label = near ? "CASI" : "ESPERAR";
-      const dip = pct != null ? `${(pct * 100).toFixed(0)}%` : "";
-      return `<span class="${cls}" style="font-weight:600">${label} ${dip}</span> ${thr}`;
-    };
 
     const priceCells = `
       <td class="col-sep" style="font-variant-numeric:tabular-nums">${fmtPrice(snap.price)}</td>
@@ -1509,7 +1510,7 @@ function renderTickerTable(tickers, sc, sd, sortFnName, actionCell, pfCols = fal
       <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_1w)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_12m)}</td>
       <td style="font-variant-numeric:tabular-nums">${snap.week52_high != null ? `$${snap.week52_high.toFixed(2)}` : "—"}</td>
-      <td style="font-variant-numeric:tabular-nums">${fmtBuyTarget(buyTarget)}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtBuyTargetHtml(buyTarget)}</td>
     `;
 
     const makeScoreCell = (c, extraClass = "") => {
@@ -1660,6 +1661,8 @@ function renderPortfolioTable(tickers) {
     ${sortTh("year_change","52W %")}
     ${sortTh("ath",        "52W Hi")}
     ${sortTh("pct_52w",   "vs 52W")}
+    <th class="col-sep" style="text-align:center">Long</th>
+    <th style="text-align:left">Buy Target</th>
     ${sortTh("cost_basis", "Cost Basis", "col-sep pf-col", "text-align:right")}
     ${sortTh("shares",     "Shares",     "pf-col",          "text-align:right")}
     ${sortTh("total",      "Total",      "pf-col",          "text-align:right")}
@@ -1732,11 +1735,23 @@ function renderPortfolioTable(tickers) {
       ? `<input class="pf-input" id="pf-shares-${ticker}" type="number" step="1" min="0" placeholder="Shares" value="${shares ?? ""}" onkeydown="if(event.key==='Enter') saveHolding('${ticker}')">`
       : fmtShares(shares);
 
+    // Thesis-aware: a held name that's in profit but whose verdict decayed to HOLD/SELL is
+    // the "up 40% and it just turned SELL" case — flag it so the P&L doesn't hide the rot.
+    const action    = wd?.scores?.composite_long?.action;
+    const longScore = wd?.scores?.composite_long?.score;
+    const decayed   = ["HOLD", "SELL", "STRONG-SELL"].includes(action);
+    const thesisWarn = (diffPct != null && diffPct > 0.05 && decayed)
+      ? ` <span class="risk-flag risk-rev" title="In profit but the verdict is now ${actionLabel(action)} — thesis decayed">⚠</span>` : "";
+    const scoreCell = `<td class="col-sep ${scoreColor(longScore)}" style="text-align:center"
+        onmouseenter="${wd ? `showScoreTooltip(event,'${ticker}','composite_long')` : ''}"
+        onmouseleave="hideTooltip()">${longScore != null ? longScore.toFixed(1) : "—"}</td>`;
+    const btCell = `<td style="font-variant-numeric:tabular-nums">${fmtBuyTargetHtml(wd?.scores?.buy_target)}</td>`;
+
     const holdingCells = `
       <td class="col-sep pf-col">${costBasisCell}</td>
       <td class="pf-col">${sharesCell}</td>
       <td class="pf-col">${fmtTotal(total)}</td>
-      <td class="pf-col">${fmtDiff(diffPct, diffAbs)}</td>`;
+      <td class="pf-col">${fmtDiff(diffPct, diffAbs)}${thesisWarn}</td>`;
 
     const actionCell = isEditing
       ? `<button class="btn-save" onclick="saveHolding('${ticker}')">✓ Save</button>
@@ -1748,6 +1763,8 @@ function renderPortfolioTable(tickers) {
     return `<tr>
       ${tickerCell}
       ${priceCells}
+      ${scoreCell}
+      ${btCell}
       ${holdingCells}
       <td class="col-sep subtext">${refreshed}</td>
       <td style="text-align:right;white-space:nowrap">${actionCell}</td>
