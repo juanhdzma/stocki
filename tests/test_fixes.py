@@ -1055,3 +1055,22 @@ def test_cyclical_surge_ignores_monotonic_hypergrowth():
     # NBIS/IONQ-shape: never declined YoY -> secular/hypergrowth, not cyclical
     ann = [{"type": "annual", "revenue": r} for r in (0.5, 0.1, 0.02, 0.01)]
     assert _is_cyclical_surge(ann, {"revenue_growth": 6.8}) is False
+
+
+def test_fcf_yield_converts_foreign_currency_instead_of_dropping():
+    from core.scorers.price_long import score
+
+    # foreign filer: FCF in local ccy, market_cap in price ccy -> convert via fx_rate
+    snap = {"market_cap": 10e9, "currency": "USD", "financial_currency": "DKK", "fx_rate": 0.15}
+    funds = [{"type": "quarterly", "fcf": 1e10}]  # 1e10 DKK * 0.15 = 1.5e9 USD -> 15% yield
+    result = score(funds, snap)
+    assert result["sub_scores"]["fcf_yield"] is not None
+
+
+def test_fcf_yield_excluded_when_foreign_and_no_fx_rate():
+    from core.scorers.price_long import score
+
+    snap = {"market_cap": 10e9, "currency": "USD", "financial_currency": "DKK", "fx_rate": None}
+    funds = [{"type": "quarterly", "fcf": 1e10}]
+    result = score(funds, snap)
+    assert result["sub_scores"]["fcf_yield"] is None   # can't convert -> don't mix currencies

@@ -331,6 +331,19 @@ def _compute_eps_estimate_revision(t: yf.Ticker) -> tuple[float | None, float | 
         return None, None
 
 
+def _fetch_fx_rate(from_ccy: str | None, to_ccy: str | None) -> float | None:
+    """Spot rate to convert `from_ccy` into `to_ccy` (e.g. DKK->USD for a Danish filer with a
+    USD-priced ADR). Only fetched for foreign filers; None when same currency or unavailable."""
+    if not from_ccy or not to_ccy or from_ccy == to_ccy:
+        return None
+    try:
+        fi = yf.Ticker(f"{from_ccy}{to_ccy}=X").fast_info
+        rate = fi.get("lastPrice") if hasattr(fi, "get") else fi.last_price
+        return float(rate) if rate else None
+    except Exception:
+        return None
+
+
 def _fetch_recommendation_counts(t: yf.Ticker) -> dict:
     try:
         df = t.recommendations
@@ -417,6 +430,9 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "industry":                   info.get("industry"),
         "currency":                   info.get("currency"),
         "financial_currency":         info.get("financialCurrency"),
+        # FX rate financial_currency -> price currency, so scores can convert local-currency
+        # fundamentals (FCF) into the price currency instead of dropping the signal entirely.
+        "fx_rate":                    _fetch_fx_rate(info.get("financialCurrency"), info.get("currency")),
         # Valuation multiples (current)
         "trailing_pe":                _f(info.get("trailingPE")),
         "forward_pe":                 _f(info.get("forwardPE")),

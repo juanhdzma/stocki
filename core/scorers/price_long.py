@@ -15,10 +15,16 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     # come in USD — any ratio mixing the two (FCF yield, growth-adj P/S) is meaningless.
     fx_mismatch = currency_mismatch(snapshot)
 
-    # 1. FCF yield (0-45) — real cash generation vs. price, no analyst subjectivity involved
+    # 1. FCF yield (0-45) — real cash generation vs. price, no analyst subjectivity involved.
+    # For a foreign filer, FCF is in local currency and market_cap in the price currency:
+    # convert with fx_rate so the yield is valid instead of dropping this (45pt) signal. If the
+    # rate is unavailable, fall back to excluding it rather than mixing currencies.
     mc      = snapshot.get("market_cap")
     ttm_fcf = ttm(fundamentals, "fcf")
-    if ttm_fcf is not None and mc and mc > 0 and not fx_mismatch:
+    if fx_mismatch:
+        fx = snapshot.get("fx_rate")
+        ttm_fcf = ttm_fcf * fx if (ttm_fcf is not None and fx) else None
+    if ttm_fcf is not None and mc and mc > 0:
         sub["fcf_yield"] = round(clamp((ttm_fcf / mc) / 0.06, 0, 1) * 45, 1)
     else:
         sub["fcf_yield"] = None
