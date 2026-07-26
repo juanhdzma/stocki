@@ -1,4 +1,4 @@
-# StockDesk
+# Stocki
 
 Personal stock research dashboard. Pulls market data, fundamentals, and insider transactions from Yahoo Finance and OpenInsider, scores each ticker across several dimensions, and displays everything in a single-page UI.
 
@@ -63,7 +63,7 @@ Optional `.env` file at the repo root:
 POSTGRES_PASSWORD=yourpassword
 ```
 
-If omitted, the password defaults to `stockdesk`.
+If omitted, the password defaults to `stocki`.
 
 ## API
 
