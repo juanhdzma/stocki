@@ -3,9 +3,10 @@ from __future__ import annotations
 import requests
 from bs4 import BeautifulSoup
 
+# openinsider.com does not serve a valid TLS cert — https:// fails in-browser. Keep http://.
 _BASE_URL = "http://openinsider.com/screener"
 _TIMEOUT = 15
-_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; StockDesk/1.0)"}
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; Stocki/1.0)"}
 
 _COL_MAP = {
     "Filing Date": "filing_date",

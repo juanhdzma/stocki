@@ -6,5 +6,5 @@ load_dotenv()
 TICKERS: list[str] = []
 DATABASE_URL: str = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://stockdesk:stockdesk@localhost:5432/stockdesk",
+    "postgresql+asyncpg://stocki:stocki@localhost:5432/stocki",
 )

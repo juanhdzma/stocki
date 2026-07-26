@@ -1,20 +1,5 @@
 from __future__ import annotations
-from .base import clamp, latest_quarters, finalize_score
-
-
-def _slope_normalized(values: list[float]) -> float:
-    """Linear regression slope as fraction of mean. Positive = uptrend."""
-    n = len(values)
-    if n < 2:
-        return 0.0
-    xs = list(range(n))
-    mx = sum(xs) / n
-    my = sum(values) / n
-    if my == 0:
-        return 0.0
-    num = sum((x - mx) * (y - my) for x, y in zip(xs, values))
-    den = sum((x - mx) ** 2 for x in xs)
-    return (num / den) / abs(my) if den else 0.0
+from .base import clamp, latest_quarters, finalize_score, currency_mismatch, slope_normalized, linreg_slope
 
 
 def score(fundamentals: list[dict], snapshot: dict) -> dict:
@@ -27,6 +12,8 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
         "fcf_trajectory": 10.0,
         "rd_intensity":    6.0,
         "rule_of_40":      6.0,
+        "estimate_revisions": 8.0,
+        "growth_consistency": 8.0,
     }
 
     rd_pairs = [(q["rd_expense"], q["revenue"]) for q in quarters
@@ -35,18 +22,20 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     # 1. Revenue trend (0-30) — slope over up to 8 quarters, chronological
     rev_chron = list(reversed([q["revenue"] for q in quarters if q.get("revenue") is not None]))
     if len(rev_chron) >= 2:
-        s = _slope_normalized(rev_chron)
+        s = slope_normalized(rev_chron)
         # s ≈ +0.10/quarter = strong; s ≈ -0.10 = shrinking
         sub["revenue_trend"] = round(clamp((s / 0.10 + 1) / 2 * 30, 0, 30), 1)
     else:
         sub["revenue_trend"] = None
 
-    # 2. Net income trajectory (0-20) — direction matters even if negative
+    # 2. Net income trajectory (0-28) — direction matters even if negative
     ni_all = [q["net_income"] for q in quarters if q.get("net_income") is not None]
     if len(ni_all) >= 2:
         ni_recent = ni_all[0]
         ni_older  = ni_all[-1]
-        delta     = ni_recent - ni_older
+        # slope over all quarters (× span) rather than newest−oldest, so one lumpy
+        # tax/one-off quarter at an endpoint can't flip the read (ni_all is newest-first)
+        delta     = linreg_slope(ni_all[::-1]) * (len(ni_all) - 1)
         rev_scale = rev_chron[-1] if rev_chron else None
         if rev_scale and rev_scale != 0:
             delta_pct = delta / abs(rev_scale)
@@ -73,10 +62,10 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     else:
         sub["gm_expansion"] = None
 
-    # 4. FCF trajectory (0-15)
+    # 4. FCF trajectory (0-10)
     fcf_all = [q["fcf"] for q in quarters if q.get("fcf") is not None]
     if len(fcf_all) >= 2:
-        delta     = fcf_all[0] - fcf_all[-1]
+        delta     = linreg_slope(fcf_all[::-1]) * (len(fcf_all) - 1)   # slope × span, endpoint-robust
         rev_scale = rev_chron[-1] if rev_chron else None
         if rev_scale and rev_scale != 0:
             sub["fcf_trajectory"] = round(clamp((delta / abs(rev_scale) / 0.05 + 1) / 2 * 10, 0, 10), 1)
@@ -94,7 +83,7 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     else:
         sub["rd_intensity"] = None
 
-    # 6. Rule of 40 (0-5)
+    # 6. Rule of 40 (0-6)
     rev_g = snapshot.get("revenue_growth")
     op_m  = snapshot.get("operating_margin")
     if rev_g is not None and op_m is not None:
@@ -102,5 +91,32 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
         sub["rule_of_40"] = 6.0 if r40 >= 40 else (3.0 if r40 >= 20 else (1.0 if r40 >= 0 else 0.0))
     else:
         sub["rule_of_40"] = None
+
+    # 7. Estimate revisions (0-8) — is the Street getting more or less bullish on this year's
+    # EPS over the last 90 days? Normalized by price (not by the estimate itself) since EPS
+    # estimates near zero make percentage deltas meaningless for growth-stage companies.
+    price   = snapshot.get("price")
+    est_now = snapshot.get("eps_estimate_curr_fy")
+    est_old = snapshot.get("eps_estimate_curr_fy_90d_ago")
+    if price and price > 0 and est_now is not None and est_old is not None and not currency_mismatch(snapshot):
+        revision_pct = (est_now - est_old) / price
+        sub["estimate_revisions"] = round(clamp((revision_pct / 0.01 + 1) / 2 * 8, 0, 8), 1)
+    else:
+        sub["estimate_revisions"] = None
+
+    # 8. Growth consistency (0-8) — revenue_trend is one slope over the whole window, which
+    # can't tell "still accelerating" from "still growing but losing steam". Compares the
+    # trend of the most recent half of available quarters against the older half. In practice
+    # most tickers only have ~5 quarters with revenue actually populated (yfinance's oldest
+    # cached quarter is often incomplete) — 4 is the realistic floor, not 8, for this to ever
+    # fire for more than a handful of names.
+    if len(rev_chron) >= 4:
+        half = len(rev_chron) // 2
+        older_slope  = slope_normalized(rev_chron[:half])
+        recent_slope = slope_normalized(rev_chron[half:])
+        delta = recent_slope - older_slope
+        sub["growth_consistency"] = round(clamp((delta / 0.10 + 1) / 2 * 8, 0, 8), 1)
+    else:
+        sub["growth_consistency"] = None
 
     return finalize_score(sub, max_pts)

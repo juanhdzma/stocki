@@ -2,11 +2,13 @@ from __future__ import annotations
 import os
 import logging
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import requests.exceptions
 import yfinance as yf
 import pandas as pd
+import numpy as np
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -141,10 +143,25 @@ def _period_data(inc: pd.DataFrame | None, bs: pd.DataFrame | None,
 
 # ── Bulk price download ───────────────────────────────────────────────────────
 
-def batch_download_history(tickers: list[str]) -> pd.DataFrame:
-    """Single bulk download: all tickers + SPY, 2y daily. Returns MultiIndex DataFrame."""
+def batch_download_history(tickers: list[str], period: str = "2y") -> pd.DataFrame:
+    """Single bulk download: all tickers + SPY. Returns MultiIndex DataFrame."""
     all_syms = list(dict.fromkeys([t.upper() for t in tickers] + ["SPY"]))
-    return yf.download(all_syms, period="2y", interval="1d", auto_adjust=True, progress=False)
+    return yf.download(all_syms, period=period, interval="1d", auto_adjust=True, progress=False)
+
+
+def fetch_price_history(ticker: str, period: str = "1y") -> list[dict]:
+    """Daily close prices for charting. Live fetch, not cached."""
+    raw = yf.download(ticker, period=period, interval="1d", auto_adjust=True, progress=False)
+    if raw.empty:
+        return []
+    closes = raw["Close"]
+    if isinstance(closes, pd.DataFrame):
+        closes = closes[ticker] if ticker in closes.columns else closes.iloc[:, 0]
+    closes = closes.dropna()
+    return [
+        {"date": ts.strftime("%Y-%m-%d"), "close": float(v)}
+        for ts, v in closes.items()
+    ]
 
 
 # ── 1W high ───────────────────────────────────────────────────────────────────
@@ -205,6 +222,51 @@ def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str,
         return {}
 
 
+# ── Typical pullback depth (for buy_target) ──────────────────────────────────
+
+def _compute_typical_pullback(ticker: str, hist: pd.DataFrame | None = None) -> float | None:
+    """Median depth of this ticker's own peak-to-trough drawdown episodes (≥5%) over 2y.
+
+    Used by buy_target to calibrate how deep a "normal" dip is for THIS ticker, instead
+    of a fixed margin — a name that routinely pulls back 25% needs a different entry
+    discount than one that rarely dips more than 8%.
+    """
+    try:
+        if hist is not None and not hist.empty:
+            closes_all = hist["Close"]
+            closes = closes_all[ticker] if ticker in closes_all.columns else pd.Series(dtype=float)
+            closes = closes.dropna()
+        else:
+            raw = yf.download(ticker, period="2y", interval="1d", auto_adjust=True, progress=False)
+            if raw.empty:
+                return None
+            closes = raw["Close"]
+            if isinstance(closes, pd.DataFrame):
+                closes = closes[ticker] if ticker in closes.columns else closes.iloc[:, 0]
+            closes = closes.dropna()
+
+        if len(closes) < 60:
+            return None
+
+        drawdown = closes / closes.cummax() - 1.0
+
+        troughs = []
+        cur_min, active = 0.0, False
+        for v in drawdown:
+            if v <= -0.05:
+                active = True
+                cur_min = min(cur_min, v)
+            elif active:
+                troughs.append(cur_min)
+                active, cur_min = False, 0.0
+        if active:
+            troughs.append(cur_min)
+
+        return abs(float(np.median(troughs))) if troughs else None
+    except Exception:
+        return None
+
+
 # ── Dilution rate (YoY shares change) ────────────────────────────────────────
 
 def _compute_dilution_rate(t: yf.Ticker) -> float | None:
@@ -224,47 +286,59 @@ def _compute_dilution_rate(t: yf.Ticker) -> float | None:
         return None
 
 
-# ── Put/Call ratio ────────────────────────────────────────────────────────────
+# ── Earnings dates ────────────────────────────────────────────────────────────
 
-def _compute_put_call(t: yf.Ticker, max_expirations: int = 8) -> float | None:  # noqa: E501
+def _compute_earnings_dates(t: yf.Ticker, limit: int = 12) -> list[str]:
     try:
-        expirations = t.options[:max_expirations]
-        if not expirations:
+        df = t.get_earnings_dates(limit=limit)
+        if df is None or df.empty:
+            return []
+        return sorted(d.strftime("%Y-%m-%d") for d in df.index if pd.notna(d))
+    except Exception:
+        return []
+
+
+# ── Earnings execution track record ───────────────────────────────────────────
+
+def _compute_earnings_beat_rate(t: yf.Ticker, quarters: int = 4) -> float | None:
+    try:
+        df = t.earnings_history
+        if df is None or df.empty:
             return None
-        total_calls = 0
-        total_puts = 0
-        for exp in expirations:
-            chain = t.option_chain(exp)
-            total_calls += chain.calls["openInterest"].fillna(0).sum()
-            total_puts += chain.puts["openInterest"].fillna(0).sum()
-        if total_calls == 0:
+        recent = df.tail(quarters)
+        vals = [(a, e) for a, e in zip(recent["epsActual"], recent["epsEstimate"])
+                if pd.notna(a) and pd.notna(e)]
+        if not vals:
             return None
-        return round(total_puts / total_calls, 4)
+        beats = sum(1 for a, e in vals if a > e)
+        return beats / len(vals)
     except Exception:
         return None
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+# ── Analyst estimate revisions ────────────────────────────────────────────────
 
-def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict:
-    t = yf.Ticker(ticker)
-    info = t.info or {}
+def _compute_eps_estimate_revision(t: yf.Ticker) -> tuple[float | None, float | None]:
+    try:
+        df = t.eps_trend
+        if df is None or df.empty or "0y" not in df.index:
+            return None, None
+        row = df.loc["0y"]
+        current = _f(row.get("current"))
+        ago_90d = _f(row.get("90daysAgo"))
+        return current, ago_90d
+    except Exception:
+        return None, None
 
-    price = _f(info.get("currentPrice") or info.get("regularMarketPrice"))
-    market_cap = _f(info.get("marketCap"))
 
-    # All yf.Ticker calls must happen before _compute_returns — yf.download invalidates the crumb
-    pc_ratio = _compute_put_call(t)
-    dilution_rate = _compute_dilution_rate(t)
-
-    _rec_counts: dict = {}
+def _fetch_recommendation_counts(t: yf.Ticker) -> dict:
     try:
         df = t.recommendations
         if df is not None and not df.empty:
             cur = df[df["period"] == "0m"]
             if not cur.empty:
                 row = cur.iloc[0]
-                _rec_counts = {
+                return {
                     "rec_strong_buy":  int(row.get("strongBuy",  0)),
                     "rec_buy":         int(row.get("buy",        0)),
                     "rec_hold":        int(row.get("hold",       0)),
@@ -273,28 +347,55 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
                 }
     except Exception:
         pass
+    return {}
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict:
+    t = yf.Ticker(ticker)
+    info = t.info or {}
+    if not info.get("currentPrice") and not info.get("regularMarketPrice"):
+        log.warning("[%s] info empty — re-authing and retrying", ticker)
+        init_auth()
+        t = yf.Ticker(ticker)
+        info = t.info or {}
+
+    price = _f(info.get("currentPrice") or info.get("regularMarketPrice"))
+    market_cap = _f(info.get("marketCap"))
+
+    # All yf.Ticker calls must happen before _compute_returns — yf.download invalidates the
+    # crumb. These are independent Yahoo endpoints, so fan them out instead of running them
+    # serially (measured ~5.8s/ticker serial). Each gets its own yf.Ticker instance — sharing
+    # one across threads serializes internally (a shared session/cache lock), erasing the gain.
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        fut_dilution = ex.submit(_compute_dilution_rate, yf.Ticker(ticker))
+        fut_beat = ex.submit(_compute_earnings_beat_rate, yf.Ticker(ticker))
+        fut_eps = ex.submit(_compute_eps_estimate_revision, yf.Ticker(ticker))
+        fut_rec = ex.submit(_fetch_recommendation_counts, yf.Ticker(ticker))
+        dilution_rate = fut_dilution.result()
+        earnings_beat_rate = fut_beat.result()
+        eps_estimate_curr_fy, eps_estimate_curr_fy_90d_ago = fut_eps.result()
+        _rec_counts = fut_rec.result()
 
     returns = _compute_returns(ticker, hist)
     pct_from_1w_high = _compute_1w_pct(ticker, price, hist)
+    typical_pullback_pct = _compute_typical_pullback(ticker, hist)
+
+    # Price sanity: a spurious quote (split-mismatch, bad tick) deviates wildly from the prior
+    # close. Flag it so scores built on it can be treated with suspicion instead of silently
+    # trusted — and don't let such a spike self-clamp the 52w high (which would hide it).
+    prev_close = _f(info.get("regularMarketPreviousClose") or info.get("previousClose"))
+    price_suspect = bool(prev_close and price and abs(price / prev_close - 1) > 0.5)
 
     week52_high = _f(info.get("fiftyTwoWeekHigh"))
+    if price and week52_high and price > week52_high and not price_suspect:
+        week52_high = price
     pct_from_52w_high = (price - week52_high) / week52_high if (price and week52_high) else None
 
     day_change_pct = _f(info.get("regularMarketChangePercent"))
 
-    ath = None
-    try:
-        if hist is not None and not hist.empty:
-            closes = hist["Close"]
-            col = ticker if ticker in closes.columns else (closes.columns[0] if len(closes.columns) == 1 else None)
-            if col is not None:
-                ath = float(closes[col].dropna().max())
-        if ath is None:
-            raw = yf.download(ticker, period="max", interval="1mo", auto_adjust=True, progress=False)
-            if not raw.empty:
-                ath = float(raw["Close"].max())
-    except Exception:
-        ath = week52_high
+    ath = week52_high
 
     return {
         # Price & market
@@ -306,6 +407,7 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "week52_high":                week52_high,
         "pct_from_52w_high":          pct_from_52w_high,
         "pct_from_1w_high":           pct_from_1w_high,
+        "typical_pullback_pct":       typical_pullback_pct,
         "day_change_pct":             day_change_pct,
         "ath":                        ath,
         "beta":                       _f(info.get("beta")),
@@ -313,6 +415,8 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "shares_outstanding":         _f(info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")),
         "sector":                     info.get("sector"),
         "industry":                   info.get("industry"),
+        "currency":                   info.get("currency"),
+        "financial_currency":         info.get("financialCurrency"),
         # Valuation multiples (current)
         "trailing_pe":                _f(info.get("trailingPE")),
         "forward_pe":                 _f(info.get("forwardPE")),
@@ -330,6 +434,9 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "revenue_growth":             _f(info.get("revenueGrowth")),
         "earnings_growth":            _f(info.get("earningsGrowth")),
         "dilution_rate":              dilution_rate,
+        "earnings_beat_rate":         earnings_beat_rate,
+        "eps_estimate_curr_fy":       eps_estimate_curr_fy,
+        "eps_estimate_curr_fy_90d_ago": eps_estimate_curr_fy_90d_ago,
         # Liquidity & leverage (current)
         "current_ratio":              _f(info.get("currentRatio")),
         "quick_ratio":                _f(info.get("quickRatio")),
@@ -348,9 +455,39 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "recommendation_key":         info.get("recommendationKey"),
         **_rec_counts,
         # Options
-        "put_call_ratio": pc_ratio,
+        "price_suspect":  price_suspect,
         "returns": returns,
         "insider_transactions": [],
+        "earnings_dates": [],
+    }
+
+
+def fetch_earnings_dates(ticker: str) -> list[str]:
+    return _compute_earnings_dates(yf.Ticker(ticker))
+
+
+def fetch_portfolio_price(ticker: str, hist: pd.DataFrame | None = None) -> dict:
+    """Lightweight price-only fetch for portfolio. No fundamentals, no scores."""
+    info = yf.Ticker(ticker).info or {}
+    price          = _f(info.get("currentPrice") or info.get("regularMarketPrice"))
+    day_change_pct = _f(info.get("regularMarketChangePercent"))
+    week52_high    = _f(info.get("fiftyTwoWeekHigh"))
+    return_12m     = _f(info.get("52WeekChange") or info.get("fiftyTwoWeekChange"))
+
+    return_1w = None
+    if hist is not None and not hist.empty and ticker in hist["Close"].columns:
+        try:
+            closes = hist["Close"][ticker].dropna()
+            if len(closes) > 5:
+                return_1w = float((closes.iloc[-1] - closes.iloc[-6]) / closes.iloc[-6])
+        except Exception:
+            pass
+
+    return {
+        "price":          price,
+        "day_change_pct": day_change_pct,
+        "return_1w":      return_1w,
+        "return_12m":     return_12m,
     }
 
 

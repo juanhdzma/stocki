@@ -1,38 +1,24 @@
 from __future__ import annotations
+import math
+from .base import clamp
 from .fundamental_momentum import score as fm_score
 from .value_quality import score as vq_score
-from .price_short import score as ps_score
 from .price_long import score as pl_score
 from core.insider_score import compute_insider_score, normalize
 
-_BASE_WEIGHTS = {
-    "fundamental_momentum": 0.25,
-    "value_quality":        0.30,
-    "insider_conviction":   0.20,
+_QUALITY_WEIGHTS_LONG = {
+    "fundamental_momentum": 0.40,
+    "value_quality":        0.50,
+    "insider_conviction":   0.10,
 }
 
-_PRICE_WEIGHT = 0.25
-
 _THRESHOLDS = [
+    (80, "STRONG-BUY"),
     (60, "BUY"),
     (40, "HOLD"),
-    (0,  "SELL"),
+    (20, "SELL"),
+    (0,  "STRONG-SELL"),
 ]
-
-_INSIDER_MAP = [
-    (-100, 0), (-60, 5), (-10, 45), (0, 50), (40, 90), (100, 100),
-]
-
-
-def _map_insider(raw: float) -> float:
-    for i in range(len(_INSIDER_MAP) - 1):
-        x0, y0 = _INSIDER_MAP[i]
-        x1, y1 = _INSIDER_MAP[i + 1]
-        if x0 <= raw <= x1:
-            t = (raw - x0) / (x1 - x0)
-            return y0 + t * (y1 - y0)
-    return 0.0 if raw < -100 else 100.0
-
 
 def _insider(snapshot: dict) -> dict:
     txs  = snapshot.get("insider_transactions", [])
@@ -40,51 +26,196 @@ def _insider(snapshot: dict) -> dict:
     w52l = snapshot.get("week52_low")
     w52h = snapshot.get("week52_high")
 
-    normalized = normalize(txs)
-    r3m = compute_insider_score(normalized, market_cap=mc, week52_low=w52l,
-                                week52_high=w52h, days_back=90,  _already_normalized=True)
-    r1y = compute_insider_score(normalized, market_cap=mc, week52_low=w52l,
-                                week52_high=w52h, days_back=365, _already_normalized=True)
-
-    sub = {
-        "score_3m":       r3m["score"],
-        "score_1y":       r1y["score"],
-        "valid_buys_3m":  r3m["valid_buys"],
-        "valid_sells_3m": r3m["valid_sells"],
-    }
-
     if not txs:
-        return {"score": 50.0, "sub_scores": sub}
-    if r1y["valid_buys"] + r1y["valid_sells"] == 0:
-        return {"score": None, "sub_scores": sub}
+        return {"score": None, "sub_scores": {}}
 
-    r3m_has_data = r3m["valid_buys"] + r3m["valid_sells"] > 0
-    raw_blend = (r3m["score"] * 0.7 + r1y["score"] * 0.3) if r3m_has_data else r1y["score"]
+    result = compute_insider_score(
+        normalize(txs),
+        market_cap=mc,
+        week52_low=w52l,
+        week52_high=w52h,
+        days_back=365,
+        _already_normalized=True,
+        earnings_dates=snapshot.get("earnings_dates"),
+    )
 
-    reversal_bonus = 0.0
-    if r3m_has_data and r1y["score"] < 0 and r3m["score"] > 0:
-        reversal_bonus = min(20.0, (r3m["score"] - r1y["score"]) / 5)
+    # No transactions survive the value/role/routine filters → no signal, not "neutral".
+    # Return None so it drops out of the weighted composite instead of dragging every
+    # score toward 50 purely for lack of insider data.
+    if result.get("valid_buys", 0) + result.get("valid_sells", 0) == 0:
+        return {"score": None, "sub_scores": result}
 
-    raw_final = max(-100.0, min(100.0, raw_blend + reversal_bonus))
-    return {
-        "score": round(_map_insider(raw_final), 1),
-        "sub_scores": sub,
-    }
+    return {"score": result["score"], "sub_scores": result}
 
 
-def _composite(base_scores: dict, price_score: dict, price_key: str) -> dict:
-    all_scores = {**base_scores, price_key: price_score}
-    weights    = {**_BASE_WEIGHTS, price_key: _PRICE_WEIGHT}
-    weights_pct = {k: round(v * 100) for k, v in weights.items()}
+def _action(score: float) -> str:
+    return next(label for threshold, label in _THRESHOLDS if score >= threshold)
 
-    available = {k: v for k, v in all_scores.items() if v["score"] is not None}
-    if not available:
+
+def _quality_score(base: dict) -> float | None:
+    weights = _QUALITY_WEIGHTS_LONG
+    available = {k: base[k] for k in weights if base[k]["score"] is not None}
+    total_w = sum(weights[k] for k in available)
+    if not available or not total_w:
+        return None
+    return sum(v["score"] * weights[k] / total_w for k, v in available.items())
+
+
+_PRICE_BOOST_MAX = 6.0
+_DIP_BONUS_MAX   = 10.0
+_DIP_REF_DROP     = 0.11   # beta-adjusted drop (at beta=1) that earns the full dip bonus
+
+
+def _dip_bonus(snapshot: dict) -> float:
+    # A fundamentally strong stock selling off hard is a buying opportunity, not a red
+    # flag — but "hard" is relative to the stock's own volatility: a low-beta name
+    # dropping 5% in a day is as notable as a high-beta name dropping ~20% in a week.
+    # Day-drop is weighted up (x2.2) since an equal % move in a single day is rarer
+    # than over a week; whichever timeframe shows the bigger relative move wins.
+    day_pct  = snapshot.get("day_change_pct")
+    week_ret = (snapshot.get("returns") or {}).get("ticker_return_1w")
+    day_drop  = max(-(day_pct / 100), 0.0) if day_pct  is not None else 0.0
+    week_drop = max(-week_ret,         0.0) if week_ret is not None else 0.0
+    effective_drop = max(day_drop * 2.2, week_drop)
+    if effective_drop <= 0:
+        return 0.0
+    beta = max(snapshot.get("beta") or 1.0, 0.5)
+    return round(clamp(effective_drop / beta / _DIP_REF_DROP, 0, 1) * _DIP_BONUS_MAX, 1)
+
+
+def _composite_long(base: dict, price_long: dict, snapshot: dict) -> dict:
+    # Long ranks businesses by quality (fm/vq/insiders) first — price and recent dips are
+    # bounded modifiers on top, never enough to let a mediocre "statistically cheap" business
+    # (often driven by optimistic analyst targets) outrank a genuinely better one. A cheap
+    # price or a beta-adjusted dip can still tip a good-not-great business into STRONG-BUY,
+    # but neither can rescue a bad business — that only happens by raising quality itself.
+    weights_pct = {k: round(v * 100) for k, v in _QUALITY_WEIGHTS_LONG.items()}
+    quality = _quality_score(base)
+    if quality is None:
         return {"score": None, "action": "N/A", "weights": weights_pct}
 
-    total_w   = sum(weights[k] for k in available)
-    score     = round(sum(v["score"] * weights[k] / total_w for k, v in available.items()), 1)
-    action    = next(label for threshold, label in _THRESHOLDS if score >= threshold)
-    return {"score": score, "action": action, "weights": weights_pct}
+    pl = price_long["score"]
+    price_attractive = clamp((pl - 50) / 50, 0, 1) if pl is not None else 0.0
+    dip_bonus = _dip_bonus(snapshot)
+
+    score = round(clamp(quality + price_attractive * _PRICE_BOOST_MAX + dip_bonus, 0, 100), 1)
+
+    # Trailing profitability/balance-sheet strength describes where a business has been,
+    # not where it's going — a business with genuinely shrinking revenue shouldn't reach
+    # STRONG-BUY on quality alone, no matter how clean its margins or balance sheet are.
+    rev_g = snapshot.get("revenue_growth")
+    if rev_g is not None and rev_g < 0:
+        score = min(score, 79.9)
+
+    return {"score": score, "action": _action(score), "weights": weights_pct}
+
+
+# buy_target answers one question: buy now, or wait for a dip to $X? It's anchored on the
+# CURRENT price (a modest pullback from here), NOT a position in the full 52-week range —
+# calibrated against real per-ticker judgement. Three regimes:
+#   1. Washed out — trading within a hair of its 52-week low → it has bottomed → BUY now
+#      (ORCL at its low, TSLA/ISRG near theirs).
+#   2. Rising — wait for a modest dip below the current price, deeper the harder it ran
+#      (froth grows with the log of the 12m run: AVGO +33% → ~-2%, MU +726% → ~-9%). A stock
+#      that barely moved gets almost no dip; a parabola gets a real (but capped) one.
+#   3. Falling — wait toward its 52-week low, the natural support it's dropping toward
+#      (target sits part-way between the current price and the low: CRM→~150, PLTR→~112).
+_BUY_TARGET_LOW_ZONE   = 0.08   # within this % above the 52w low → washed out → BUY
+_BUY_TARGET_FROTH_K    = 0.045  # rising: dip = this × ln(1 + run-up)
+_BUY_TARGET_FROTH_MIN  = 0.01   # even a barely-rising name gets a token dip
+_BUY_TARGET_FROTH_MAX  = 0.11   # cap the froth dip so a mega-parabola stays fillable
+_BUY_TARGET_FALL_FRAC  = 0.45   # falling: target = low + this × (price − low)
+_BUY_TARGET_FALL_MAX   = 0.06   # but never a wait deeper than this (a far-off low shouldn't overshoot)
+
+_BUY_TARGET_TREND_KEYS = (
+    "ticker_return_12m", "ticker_return_6m", "ticker_return_3m", "ticker_return_1m",
+)
+
+
+def _buy_target_trend(snapshot: dict) -> float:
+    # Longest-available price return: the sustained trajectory, not last week's noise.
+    returns = snapshot.get("returns") or {}
+    for key in _BUY_TARGET_TREND_KEYS:
+        v = returns.get(key)
+        if v is not None:
+            return v
+    return 0.0
+
+
+def _buy_target(snapshot: dict) -> dict | None:
+    price   = snapshot.get("price")
+    low_52w = snapshot.get("week52_low")
+    if not price or low_52w is None or low_52w <= 0:
+        return None
+
+    trend = _buy_target_trend(snapshot)
+
+    if (price - low_52w) / price <= _BUY_TARGET_LOW_ZONE:
+        target = price                                    # washed out at its low → buy now
+    elif trend >= 0:
+        dip = clamp(_BUY_TARGET_FROTH_K * math.log1p(trend), _BUY_TARGET_FROTH_MIN, _BUY_TARGET_FROTH_MAX)
+        target = price * (1 - dip)                        # rising → modest dip, deeper if frothy
+    else:                                                 # falling → toward the low, capped
+        target = low_52w + _BUY_TARGET_FALL_FRAC * (price - low_52w)
+        target = max(target, price * (1 - _BUY_TARGET_FALL_MAX))
+
+    return {
+        "price":             round(target, 2),
+        "pct_from_current":  round(target / price - 1, 4),
+        "signal":            "buy" if price <= target else "wait",
+    }
+
+
+_CATEGORY_LABELS = {
+    "fundamental_momentum": "Growth",
+    "value_quality":        "Quality",
+    "insider_conviction":   "Insiders",
+    "price_long":           "Sentimiento",
+}
+
+_MOVER_MIN_DELTA = 0.05
+
+
+def diff_scores(old: dict | None, new: dict | None) -> dict | None:
+    """Compare two compute_all() outputs for the same ticker and surface what moved.
+
+    Used to show "score change since last refresh" — old/new must come from the
+    same snapshot shape (compute_all's return), not partial/derived data.
+    """
+    if not old or not new:
+        return None
+    old_score = old.get("composite_long", {}).get("score")
+    new_score = new.get("composite_long", {}).get("score")
+    if old_score is None or new_score is None:
+        return None
+
+    categories: dict[str, dict] = {}
+    movers: list[dict] = []
+    for key, label in _CATEGORY_LABELS.items():
+        o, n = old.get(key, {}), new.get(key, {})
+        os_, ns_ = o.get("score"), n.get("score")
+        if os_ is None or ns_ is None:
+            continue
+        categories[key] = {"label": label, "old": os_, "new": ns_, "delta": round(ns_ - os_, 1)}
+
+        if key == "insider_conviction":
+            continue  # sub_scores here are counts (valid_buys/valid_sells), not comparable point deltas
+        o_sub, n_sub = o.get("sub_scores", {}), n.get("sub_scores", {})
+        for sub_key, nv in n_sub.items():
+            ov = o_sub.get(sub_key)
+            if ov is None or nv is None:
+                continue
+            sub_delta = round(nv - ov, 2)
+            if abs(sub_delta) < _MOVER_MIN_DELTA:
+                continue
+            movers.append({"category": label, "key": sub_key, "delta": sub_delta})
+
+    movers.sort(key=lambda m: -abs(m["delta"]))
+    return {
+        "composite":  {"old": old_score, "new": new_score, "delta": round(new_score - old_score, 1)},
+        "categories": categories,
+        "movers":     movers[:5],
+    }
 
 
 def compute_all(fundamentals: list[dict], snapshot: dict) -> dict:
@@ -93,13 +224,11 @@ def compute_all(fundamentals: list[dict], snapshot: dict) -> dict:
         "value_quality":        vq_score(fundamentals, snapshot),
         "insider_conviction":   _insider(snapshot),
     }
-    price_short = ps_score(fundamentals, snapshot)
-    price_long  = pl_score(fundamentals, snapshot)
+    price_long = pl_score(fundamentals, snapshot)
 
     return {
         **base,
-        "price_short":      price_short,
-        "price_long":       price_long,
-        "composite_short":  _composite(base, price_short, "price_short"),
-        "composite_long":   _composite(base, price_long,  "price_long"),
+        "price_long":      price_long,
+        "composite_long":  _composite_long(base, price_long, snapshot),
+        "buy_target":      _buy_target(snapshot),
     }
