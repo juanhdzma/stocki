@@ -1,3 +1,4 @@
+import glob
 import hashlib
 import logging
 from contextlib import asynccontextmanager
@@ -37,20 +38,26 @@ app.include_router(history.router, prefix="/api")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-def _asset_version(path: str) -> str:
-    try:
-        with open(path, "rb") as f:
-            return hashlib.md5(f.read()).hexdigest()[:8]
-    except OSError:
-        return "0"
+def _asset_version(*paths: str) -> str:
+    h = hashlib.md5()
+    for path in paths:
+        try:
+            with open(path, "rb") as f:
+                h.update(f.read())
+        except OSError:
+            h.update(b"0")
+    return h.hexdigest()[:8]
 
 
 def _build_index_html() -> str:
-    js_v = _asset_version("static/app.js")
+    # The ES-module entry (js/main.js) statically imports its siblings without a version
+    # query, so hash the whole js/ tree into the entry's version — any module change bumps it.
+    js_files = sorted(glob.glob("static/js/*.js"))
+    js_v = _asset_version(*js_files)
     css_v = _asset_version("static/style.css")
     with open("static/index.html") as f:
         html = f.read()
-    html = html.replace("/static/app.js", f"/static/app.js?v={js_v}")
+    html = html.replace("/static/js/main.js", f"/static/js/main.js?v={js_v}")
     html = html.replace("/static/style.css", f"/static/style.css?v={css_v}")
     return html
 
