@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { fmtRaw, timeAgo } from "./format.js";
+import { fmtRaw, timeAgo, escapeHtml } from "./format.js";
 import { scoreColor, pctScoreColor, actionBadge, actionLabel, fmtBuyTargetHtml } from "./colors.js";
 
 export function getScore(d, col) {
@@ -124,7 +124,7 @@ export function renderTickerTable(tickers, sc, sd, sortFnName, actionCell, pfCol
         <span class="ticker-link" onclick="navigate('#ticker/${ticker}')">${ticker}</span>
         ${d ? `<span style="margin-left:6px">${d.data_ready ? actionBadge(d.scores) : `<span class="action-badge action-NA">?</span>`}</span>` : ""}
       </div>
-      ${name ? `<div class="ticker-company">${name}</div>` : ""}
+      ${name ? `<div class="ticker-company">${escapeHtml(name)}</div>` : ""}
     </td>`;
 
     if (!d) {
@@ -228,7 +228,7 @@ export function renderTickerTable(tickers, sc, sd, sortFnName, actionCell, pfCol
 
     return `<tr>
       ${tickerCell}
-      <td class="td-sector">${sector}</td>
+      <td class="td-sector">${escapeHtml(sector)}</td>
       ${priceCells}
       ${pfCells}
       ${intermediateCells}
@@ -250,10 +250,11 @@ export function getPfPrice(ticker, col) {
   const wd = state.watchlistData[ticker];
   const price     = d?.price          ?? wd?.snapshot?.price;
   const holding   = state.portfolioHoldings[ticker] || {};
-  const costBasis = holding.avg_cost  ?? null;
+  const avgCost   = holding.avg_cost  ?? null;
   const shares    = holding.shares    ?? null;
   const total     = (shares != null && price != null) ? shares * price : null;
-  const diffPct   = (costBasis != null && total != null && costBasis > 0) ? (total - costBasis) / costBasis : null;
+  // avg_cost is a per-share cost, so P&L is priced per share, not against the whole position value.
+  const diffPct   = (avgCost != null && price != null && avgCost > 0) ? (price - avgCost) / avgCost : null;
   switch (col) {
     case "ticker":      return null;
     case "price":       return price ?? null;
@@ -262,7 +263,7 @@ export function getPfPrice(ticker, col) {
     case "year_change": return (d?.return_12m       ?? wd?.returns?.ticker_return_12m) ?? null;
     case "ath":         return wd?.snapshot?.week52_high ?? null;
     case "pct_52w":    return wd?.snapshot?.pct_from_52w_high ?? null;
-    case "cost_basis":  return costBasis;
+    case "cost_basis":  return avgCost;
     case "shares":      return shares;
     case "total":       return total;
     case "diff_pct":    return diffPct;
@@ -300,7 +301,7 @@ export function renderPortfolioTable(tickers) {
     ${sortTh("pct_52w",   "vs 52W")}
     <th class="col-sep" style="text-align:center">Long</th>
     <th style="text-align:left">Buy Target</th>
-    ${sortTh("cost_basis", "Cost Basis", "col-sep pf-col", "text-align:right")}
+    ${sortTh("cost_basis", "Avg Cost", "col-sep pf-col", "text-align:right")}
     ${sortTh("shares",     "Shares",     "pf-col",          "text-align:right")}
     ${sortTh("total",      "Total",      "pf-col",          "text-align:right")}
     ${sortTh("diff_pct",   "Diff",       "pf-col",          "text-align:right")}
@@ -330,7 +331,7 @@ export function renderPortfolioTable(tickers) {
         <span class="ticker-link" onclick="navigate('#ticker/${ticker}')">${ticker}</span>
         <span style="margin-left:6px">${actionBadge(wd?.scores)}</span>
       </div>
-      ${name ? `<div class="ticker-company">${name}</div>` : ""}
+      ${name ? `<div class="ticker-company">${escapeHtml(name)}</div>` : ""}
     </td>`;
 
     const price      = pd?.price           ?? wd?.snapshot?.price;
@@ -349,11 +350,13 @@ export function renderPortfolioTable(tickers) {
       <td style="font-variant-numeric:tabular-nums">${price != null && ath != null ? `$${ath.toFixed(2)}` : "—"}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtPct(pct52w, 0.30)}</td>`;
 
-    const costBasis = holding.avg_cost;
+    const avgCost   = holding.avg_cost;
     const shares    = holding.shares;
     const total     = (shares != null && price != null) ? shares * price : null;
-    const diffAbs   = (costBasis != null && total != null) ? total - costBasis : null;
-    const diffPct   = (costBasis != null && total != null && costBasis > 0) ? (total - costBasis) / costBasis : null;
+    // avg_cost is per-share: P&L = (price - avg_cost) * shares, priced per share — not
+    // the whole position value minus a per-share number.
+    const diffAbs   = (avgCost != null && shares != null && price != null) ? (price - avgCost) * shares : null;
+    const diffPct   = (avgCost != null && price != null && avgCost > 0) ? (price - avgCost) / avgCost : null;
 
     const fmtAvgCost = v => v != null ? `$${Number(v).toFixed(2)}` : "—";
     const fmtShares  = v => v != null ? parseFloat(v).toString() : "—";
@@ -366,8 +369,8 @@ export function renderPortfolioTable(tickers) {
     };
 
     const costBasisCell = isEditing
-      ? `<input class="pf-input" id="pf-avgcost-${ticker}" type="number" step="0.01" min="0" placeholder="Cost basis" value="${costBasis ?? ""}" onkeydown="if(event.key==='Enter') saveHolding('${ticker}')">`
-      : fmtAvgCost(costBasis);
+      ? `<input class="pf-input" id="pf-avgcost-${ticker}" type="number" step="0.01" min="0" placeholder="Avg cost" value="${avgCost ?? ""}" onkeydown="if(event.key==='Enter') saveHolding('${ticker}')">`
+      : fmtAvgCost(avgCost);
     const sharesCell = isEditing
       ? `<input class="pf-input" id="pf-shares-${ticker}" type="number" step="1" min="0" placeholder="Shares" value="${shares ?? ""}" onkeydown="if(event.key==='Enter') saveHolding('${ticker}')">`
       : fmtShares(shares);

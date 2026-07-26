@@ -1,4 +1,4 @@
-import { srcLink, INSIDER_SOURCE, fmtPctSigned, fmtPctLevel, shortQLabel } from "./format.js";
+import { srcLink, INSIDER_SOURCE, fmtPctSigned, fmtPctLevel, shortQLabel, escapeHtml } from "./format.js";
 import { scoreColor, scoreColorVar, scoreLabel, actionBadge, pctScoreColor } from "./colors.js";
 import { comboFundamentalsSvg, renderPriceOverview, renderPriceCharts, analystBar } from "./charts.js";
 import { state } from "./state.js";
@@ -122,7 +122,7 @@ function renderScoreCards(tickers, raw) {
     </section>`;
 }
 
-export async function loadPriceTrend(ticker) {
+async function loadPriceTrend(ticker) {
   const el = document.getElementById(`price-trend-${ticker}`);
   if (!el) return;
 
@@ -242,8 +242,8 @@ function renderInsiderSummary(tickers, raw) {
     const in3m    = td && td >= ago90;
     return `<tr>
       <td>${tx.trade_date || "—"}</td>
-      <td>${tx.insider_name || "—"}</td>
-      <td class="subtext">${tx.title || "—"}</td>
+      <td>${escapeHtml(tx.insider_name || "—")}</td>
+      <td class="subtext">${escapeHtml(tx.title || "—")}</td>
       <td class="${typeCls}">${type}</td>
       <td>${tx.Value || "—"}</td>
       <td>${tx["ΔOwn"] || "—"}</td>
@@ -275,7 +275,7 @@ function renderInsiderSummary(tickers, raw) {
     </section>`;
 }
 
-export function render(tickers, raw) {
+function render(tickers, raw) {
   const dashboard = document.getElementById("dashboard");
   dashboard.innerHTML = [
     renderScoreCards(tickers, raw),

@@ -1,5 +1,6 @@
 import { scoreColor, scoreColorVar, pctScoreColor, actionBadge } from "./colors.js";
 import { miniGroupedChart, priceTargetBar, analystBar } from "./charts.js";
+import { escapeHtml } from "./format.js";
 
 // ── Hover Tooltip ─────────────────────────────────────────────────────────────
 export function buildTooltip(ticker, d) {
@@ -269,7 +270,7 @@ export function buildScoreTooltip(ticker, col, d) {
               <span class="subtext" style="min-width:32px">${fmtDate(tx.dt)}</span>
               <span class="${cls}" style="min-width:18px;font-weight:700">${dir}</span>
               <span class="subtext" style="min-width:28px">${tx.role}</span>
-              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(name)}</span>
               <span style="min-width:48px;text-align:right;font-weight:500">${fmtVal(tx.val)}${tag}</span>
             </div>`;
           }).join("");
@@ -299,7 +300,7 @@ export function buildScoreTooltip(ticker, col, d) {
         { key: "value_quality",        label: "Quality"   },
         { key: "insider_conviction",   label: "Insiders"  },
       ];
-      const bar = s => s != null ? `<div class="tt-sub-bar" style="width:${Math.min(100, s).toFixed(0)}%;background:${s >= 70 ? "var(--green)" : s >= 50 ? "var(--yellow)" : "var(--red)"}"></div>` : "";
+      const bar = s => s != null ? `<div class="tt-sub-bar" style="width:${Math.min(100, s).toFixed(0)}%;background:${scoreColorVar(s)}"></div>` : "";
       rows = cats.map(c => {
         const s  = scores[c.key]?.score;
         const wt = weights[c.key] ?? 0;

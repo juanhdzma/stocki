@@ -62,18 +62,22 @@ export function priceTargetBar(price, low, mean, high, width, height) {
   const midY = 20;
   const fmt = v => `$${Number(v).toFixed(0)}`;
 
-  const lX = sc(low).toFixed(1), mX = sc(mean).toFixed(1),
-        hX = sc(high).toFixed(1), pX = sc(price).toFixed(1);
+  const lX = sc(low).toFixed(1), hX = sc(high).toFixed(1), pX = sc(price).toFixed(1);
+  const hasMean = mean != null;
+  const mX = hasMean ? sc(mean).toFixed(1) : null;
+  const meanMarker = hasMean
+    ? `<line x1="${mX}" y1="${midY - 8}" x2="${mX}" y2="${midY + 8}" stroke="#d29922" stroke-width="2"/>
+<text x="${mX}" y="${height - 1}" text-anchor="middle" fill="#d29922" font-size="10" font-family="monospace">${fmt(mean)}</text>`
+    : "";
 
   return `<svg width="${width}" height="${height}" overflow="visible" style="display:block;height:${height}px;margin-bottom:12px" xmlns="http://www.w3.org/2000/svg">
 <rect x="${lX}" y="${(midY - 3)}" width="${(sc(high) - sc(low)).toFixed(1)}" height="6" fill="#21262d" rx="3"/>
 <line x1="${lX}" y1="${midY - 6}" x2="${lX}" y2="${midY + 6}" stroke="#484f58" stroke-width="1.5"/>
 <line x1="${hX}" y1="${midY - 6}" x2="${hX}" y2="${midY + 6}" stroke="#484f58" stroke-width="1.5"/>
-<line x1="${mX}" y1="${midY - 8}" x2="${mX}" y2="${midY + 8}" stroke="#d29922" stroke-width="2"/>
+${meanMarker}
 <circle cx="${pX}" cy="${midY}" r="5" fill="#58a6ff"/>
 <text x="${pX}" y="${midY - 14}" text-anchor="middle" fill="#58a6ff" font-size="10" font-family="monospace" font-weight="600">${fmt(price)}</text>
 <text x="${lX}" y="${height - 1}" text-anchor="start" fill="#8b949e" font-size="10" font-family="monospace">${fmt(low)}</text>
-<text x="${mX}" y="${height - 1}" text-anchor="middle" fill="#d29922" font-size="10" font-family="monospace">${fmt(mean)}</text>
 <text x="${hX}" y="${height - 1}" text-anchor="end" fill="#8b949e" font-size="10" font-family="monospace">${fmt(high)}</text>
 </svg>`;
 }
@@ -95,7 +99,7 @@ export function analystBar(sb, b, h, s, ss, width) {
     const cx = (x + w / 2).toFixed(1);
     const out = `<rect x="${x.toFixed(1)}" y="0" width="${w.toFixed(1)}" height="${barH}" fill="${seg.color}" rx="2"/>
 ${w >= 18 ? `<text x="${cx}" y="${barH - 6}" text-anchor="middle" fill="#0d1117" font-size="10" font-family="monospace" font-weight="700">${seg.n}</text>` : ""}
-${w >= 30 ? `<text x="${cx}" y="${barH + labelH}" text-anchor="middle" fill="${seg.color}" font-size="9" font-family="monospace">${seg.label}</text>` : `<text x="${cx}" y="${barH + labelH}" text-anchor="middle" fill="${seg.color}" font-size="9" font-family="monospace">${seg.n}</text>`}`;
+${w >= 30 ? `<text x="${cx}" y="${barH + labelH}" text-anchor="middle" fill="${seg.color}" font-size="9" font-family="monospace">${seg.label}</text>` : (w < 18 ? `<text x="${cx}" y="${barH + labelH}" text-anchor="middle" fill="${seg.color}" font-size="9" font-family="monospace">${seg.n}</text>` : "")}`;
     x += w;
     return out;
   });

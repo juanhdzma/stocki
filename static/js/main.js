@@ -36,8 +36,8 @@ function editHolding(ticker) {
 async function saveHolding(ticker) {
   const avgCostEl = document.getElementById(`pf-avgcost-${ticker}`);
   const sharesEl  = document.getElementById(`pf-shares-${ticker}`);
-  const avg_cost  = avgCostEl?.value !== "" ? parseFloat(avgCostEl.value) : null;
-  const shares    = sharesEl?.value  !== "" ? parseFloat(sharesEl.value)  : null;
+  const avg_cost  = avgCostEl && avgCostEl.value !== "" ? parseFloat(avgCostEl.value) : null;
+  const shares    = sharesEl && sharesEl.value !== "" ? parseFloat(sharesEl.value) : null;
   await fetch(`/api/portfolio/${ticker}/holding`, {
     method: "PATCH",
     headers: {"Content-Type": "application/json"},
@@ -139,7 +139,7 @@ async function handleAddTicker() {
   const input = document.getElementById("add-input");
   if (!input) return;
   const ticker = input.value.trim().toUpperCase();
-  if (!ticker || !/^[A-Z.]{1,10}$/.test(ticker)) { input.value = ""; return; }
+  if (!ticker || !/^[A-Z0-9.]{1,10}$/.test(ticker)) { input.value = ""; return; }
   if (state.portfolio.includes(ticker) || state.watchlist.includes(ticker)) { input.value = ""; return; }
 
   input.value = "";
@@ -375,7 +375,7 @@ function onRoute() {
   hideTooltip();
   const hash = window.location.hash;
   if (hash.startsWith("#ticker/")) {
-    const t = hash.slice(8).toUpperCase().replace(/[^A-Z.]/g, "");
+    const t = hash.slice(8).toUpperCase().replace(/[^A-Z0-9.]/g, "");
     if (t) { showDetail(t); return; }
   }
   showHome();
