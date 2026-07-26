@@ -522,7 +522,7 @@ def _mk(score_val):
 def test_composite_long_attractive_price_lifts_good_business_to_strong_buy():
     from core.scorers.composite import _composite_long
 
-    base = {"fundamental_momentum": _mk(75), "value_quality": _mk(80), "insider_conviction": _mk(50)}
+    base = {"fundamental_momentum": _mk(75), "value_quality": _mk(85), "insider_conviction": _mk(50)}
     result = _composite_long(base, _mk(100), {})
     assert result["action"] == "STRONG-BUY"
 
@@ -532,12 +532,14 @@ def test_composite_long_quality_dominates_over_price_boost():
     one looks statistically cheaper — price is a bounded modifier, not a rank-inverter."""
     from core.scorers.composite import _composite_long
 
+    # same insiders on both, so the ONLY edge the mediocre name has is a cheaper price —
+    # which must not be enough to invert a real quality gap (isolates the price boost).
     great_business  = _composite_long(
-        {"fundamental_momentum": _mk(84), "value_quality": _mk(95), "insider_conviction": _mk(26)},
+        {"fundamental_momentum": _mk(84), "value_quality": _mk(95), "insider_conviction": _mk(50)},
         _mk(65), {},
     )
     mediocre_cheap = _composite_long(
-        {"fundamental_momentum": _mk(71), "value_quality": _mk(78), "insider_conviction": _mk(94)},
+        {"fundamental_momentum": _mk(71), "value_quality": _mk(78), "insider_conviction": _mk(50)},
         _mk(100), {},
     )
     assert great_business["score"] > mediocre_cheap["score"]

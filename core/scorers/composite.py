@@ -7,10 +7,13 @@ from .value_quality import score as vq_score
 from .price_long import score as pl_score
 from core.insider_score import compute_insider_score, normalize
 
+# insider_conviction now returns None (not a neutral 50) when there's no real signal, so its
+# weight only bites when there IS conviction data — which makes it worth more than the old 10%
+# it got as a permanent drag-to-middle. Quality gives up 5 pts for it: 40/45/15.
 _QUALITY_WEIGHTS_LONG = {
     "fundamental_momentum": 0.40,
-    "value_quality":        0.50,
-    "insider_conviction":   0.10,
+    "value_quality":        0.45,
+    "insider_conviction":   0.15,
 }
 
 _THRESHOLDS = [
