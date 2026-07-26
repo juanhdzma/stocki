@@ -156,24 +156,11 @@ tbody td:first-child {
 
 tbody tr:hover td { background: rgba(255,255,255,0.02); }
 
-/* ── Score row (category/final aggregates) ───────────────── */
-.score-row td {
-  font-weight: 700;
-  background: var(--surface2);
-  color: var(--text);
-  border-top: 1px solid var(--border) !important;
-}
-.score-row td:first-child { color: var(--subtext); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
-
-/* ── Final score row ─────────────────────────────────────── */
-.final-row td { font-size: 15px; border-bottom: 2px solid var(--border) !important; }
-
 /* ── Score colors ────────────────────────────────────────── */
 .s-green   { color: var(--green)   !important; }
 .s-yellow  { color: var(--yellow)  !important; }
 .s-red     { color: var(--red)     !important; }
 .s-null    { color: var(--null)    !important; }
-.s-missing { color: #8b5cf6        !important; }
 
 /* ── Score scale — 5 levels ──────────────────────────────── */
 .ic-l1 { color: var(--s1) !important; }
@@ -702,25 +689,11 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   font-weight: 600;
 }
 
-.tt-footer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 15px;
-  color: var(--text);
-  padding-top: 9px;
-  border-top: 1px solid var(--border);
-  margin-top: 9px;
-  flex-wrap: wrap;
-}
-
 .tt-analyst {
   padding-top: 9px;
   border-top: 1px solid var(--border);
   margin-top: 9px;
 }
-
-.tt-iscore { font-weight: 700; }
 
 /* ── Score detail sub-rows ───────────────────────────────────── */
 .tt-subs {
@@ -807,27 +780,6 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   max-width: 110px;
 }
 
-/* ── Status lights ───────────────────────────────────────────── */
-.status-lights {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.sl {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
-}
-
-.sl-gray   { background: var(--null); }
-.sl-yellow { background: var(--yellow); box-shadow: 0 0 4px rgba(210,153,34,0.6); }
-.sl-green  { background: var(--green); }
-.sl-red    { background: var(--red); }
-
 /* ── Portfolio holding columns ───────────────────────────────── */
 .pf-col {
   font-variant-numeric: tabular-nums;
@@ -882,22 +834,3 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   transition: background 0.12s;
 }
 .btn-save:hover { background: rgba(63,185,80,0.22); }
-
-/* ── Incomplete data warning badge ───────────────────────────── */
-.warn-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  font-weight: 800;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: rgba(248, 81, 73, 0.18);
-  color: var(--red);
-  border: 1px solid rgba(248, 81, 73, 0.4);
-  cursor: default;
-  margin-left: 5px;
-  vertical-align: middle;
-  line-height: 1;
-}
