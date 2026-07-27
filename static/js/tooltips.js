@@ -296,10 +296,16 @@ export function buildBuyTargetTooltip(ticker, d) {
   const sigCls = isBuy ? "s-green" : "s-red";
   const sigTxt = isBuy ? "COMPRAR" : "ESPERAR";
 
-  const volPct = bt.vol != null ? ` (${(bt.vol * 100).toFixed(0)}%)` : "";
+  const volPct = bt.vol != null ? ` prom ${(bt.vol * 100).toFixed(0)}%` : "";
   const mosPct = (bt.mos * 100).toFixed(0);
   const volCls = { alta: "s-red", media: "s-yellow", baja: "s-green" }[bt.vol_level] || "";
   const volRow = `<div class="tt-sub-row"><span class="tt-sub-lbl">Volatilidad <span class="${volCls}">${bt.vol_level || "—"}</span>${volPct}</span><span class="tt-sub-val" style="margin-left:auto">${bt.mos > 0 ? `−${mosPct}%` : "sin descuento"}</span></div>`;
+
+  const vw = bt.vol_windows || {};
+  const wins = ["1m", "6m", "12m"].filter(k => vw[k] != null);
+  const winRow = wins.length
+    ? `<div class="subtext" style="font-size:10px;margin-top:2px">${wins.map(k => `${k} ${(vw[k] * 100).toFixed(0)}%`).join(" · ")} → prom ${(bt.vol * 100).toFixed(0)}%</div>`
+    : "";
 
   const vm = (bt.vol_mid * 100).toFixed(0), vh = (bt.vol_high * 100).toFixed(0);
   const bands = [["baja", `<${vm}%`, "0%"], ["media", `${vm}–${vh}%`, "−12%"], ["alta", `≥${vh}%`, "−25%"]];
@@ -320,7 +326,7 @@ export function buildBuyTargetTooltip(ticker, d) {
       ${row("Máximo 52 semanas", $(bt.week52_high))}
       ${row("−20% = anchor", `<b>${$(bt.anchor)}</b>`)}`;
   }
-  const body = `${head}${volRow}${legend}${row("= Target", `<b>${$(bt.price)}</b>`)}`;
+  const body = `${head}${volRow}${winRow}${legend}${row("= Target", `<b>${$(bt.price)}</b>`)}`;
 
   const cmp = price != null
     ? `Precio hoy ${$(price)} ${price <= bt.price ? "≤" : ">"} ${$(bt.price)}`

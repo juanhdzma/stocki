@@ -255,12 +255,15 @@ def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str,
 # ── Realized volatility (for buy_target's margin of safety) ───────────────────
 
 
-def _compute_realized_vol(ticker: str, hist: pd.DataFrame | None = None, window: int = 252) -> float | None:
-    """Annualized realized volatility (stdev of daily returns) over the trailing `window` days.
+_VOL_WINDOWS = {"1m": 21, "6m": 126, "12m": 252}  # trading days per horizon
 
-    A robust "how much does this actually move" measure. buy_target widens its margin of safety
-    for volatile names, and the yfinance `beta` field is null for exactly the movers that matter
-    (recent spinoffs/IPOs like SNDK), so this is used instead.
+
+def _compute_realized_vol(ticker: str, hist: pd.DataFrame | None = None) -> dict[str, float] | None:
+    """Annualized realized volatility (stdev of daily returns) over 1m/6m/12m windows → dict.
+
+    A robust "how much does this actually move" measure over three horizons; buy_target averages
+    them for its margin-of-safety tier. The yfinance `beta` field is null for exactly the movers
+    that matter (recent spinoffs/IPOs like SNDK), so this is used instead.
     """
     try:
         if hist is not None and not hist.empty:
@@ -276,11 +279,17 @@ def _compute_realized_vol(ticker: str, hist: pd.DataFrame | None = None, window:
                 closes = closes[ticker] if ticker in closes.columns else closes.iloc[:, 0]
             closes = closes.dropna()
 
-        c = closes.to_numpy()[-window:]
-        if len(c) < 60:
+        c = closes.to_numpy()
+        if len(c) < 16:
             return None
-        rets = np.diff(c) / c[:-1]
-        return float(np.std(rets) * np.sqrt(252))
+        out = {}
+        for name, w in _VOL_WINDOWS.items():
+            seg = c[-w:]
+            if len(seg) < 16:  # need ~15 daily returns for a meaningful stdev
+                continue
+            rets = np.diff(seg) / seg[:-1]
+            out[name] = float(np.std(rets) * np.sqrt(252))
+        return out or None
     except Exception as exc:
         log.debug("[%s] realized-vol computation failed: %s", ticker, exc)
         return None
@@ -425,7 +434,10 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
 
     returns = _compute_returns(ticker, hist)
     pct_from_1w_high = _compute_1w_pct(ticker, price, hist)
-    realized_vol = _compute_realized_vol(ticker, hist)
+    realized_vol_windows = _compute_realized_vol(ticker, hist)
+    realized_vol = (
+        sum(realized_vol_windows.values()) / len(realized_vol_windows) if realized_vol_windows else None
+    )
 
     # Price sanity: a spurious quote (split-mismatch, bad tick) deviates wildly from the prior
     # close. Flag it so scores built on it can be treated with suspicion instead of silently
@@ -453,6 +465,7 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "pct_from_52w_high": pct_from_52w_high,
         "pct_from_1w_high": pct_from_1w_high,
         "realized_vol": realized_vol,
+        "realized_vol_windows": realized_vol_windows,
         "day_change_pct": day_change_pct,
         "ath": ath,
         "beta": _f(info.get("beta")),

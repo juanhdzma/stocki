@@ -126,7 +126,8 @@ def _composite_long(base: dict, price_long: dict, snapshot: dict) -> dict:
 # current price). With thin/absent coverage (~23% of names) it falls back to the −20%-off-52w-high
 # zone, an out-of-sample-validated mean-reversion entry (entry_lab.py: ≥20% off the high beat all else
 # ~+11pp/6m). Either anchor is then discounted by a margin of safety keyed to how much the name moves
-# (realized_vol), in three discrete tiers — low/mid/high vol → 0/12/25% extra discount. A calm name
+# (realized_vol = the average of its 1m/6m/12m annualized realized vol, so a recent-only or year-long
+# spike alone can't dominate), in three discrete tiers — low/mid/high vol → 0/12/25% extra discount. A calm name
 # (AAPL ~25%) buys at the raw anchor; a wild one (SNDK ~110%) needs a 25%-deeper entry. Tried and
 # dropped: an analyst-count weighting (arbitrary; the percentile encodes conservatism directly) and a
 # momentum widener (double-counts with vol on the bubble names — bt_lab). NOT return-validated (analyst
@@ -172,9 +173,11 @@ def _buy_target(snapshot: dict) -> dict | None:
         detail = {"method": "drawdown", "analysts": nac, "week52_high": round(w52h, 2), "dd": _BUY_TARGET_DEEP_DD}
 
     target = anchor * (1 - mos)  # same volatility discount on either anchor
+    vw = snapshot.get("realized_vol_windows") or {}
     detail.update({
         "anchor": round(anchor, 2),
-        "vol": round(vol, 4) if vol else None,
+        "vol": round(vol, 4) if vol else None,  # average of the windows — drives the tier
+        "vol_windows": {k: round(v, 4) for k, v in vw.items()},
         "vol_level": vol_level,
         "vol_mid": _BT_VOL_MID,
         "vol_high": _BT_VOL_HIGH,
