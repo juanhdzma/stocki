@@ -1170,9 +1170,9 @@ def test_buy_target_p10_anchor_widened_by_vol_tiers():
         return _buy_target(_bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0,
                                     analyst_count=15, realized_vol=vol))
 
-    assert bt(0.30)["vol_level"] == "baja" and bt(0.30)["price"] == 120.0   # no discount
-    assert bt(0.50)["vol_level"] == "media" and bt(0.50)["price"] == 105.6  # 120*0.88
-    assert bt(0.90)["vol_level"] == "alta" and bt(0.90)["price"] == 90.0    # 120*0.75
+    assert bt(0.30)["vol_level"] == "low" and bt(0.30)["price"] == 120.0   # no discount
+    assert bt(0.50)["vol_level"] == "mid" and bt(0.50)["price"] == 105.6   # 120*0.88
+    assert bt(0.90)["vol_level"] == "high" and bt(0.90)["price"] == 90.0   # 120*0.75
     assert bt(0.30)["signal"] == "buy" and bt(0.90)["signal"] == "wait"
 
 
@@ -1202,7 +1202,7 @@ def test_buy_target_drawdown_widened_by_vol_tier():
     # the volatility discount applies to the drawdown fallback too: high vol -> deeper entry.
     # anchor = w52*0.80 = 80; alta tier -> 80*0.75 = 60.
     bt = _buy_target(_bt_snap(70.0, high_52w=100.0, analyst_count=3, realized_vol=0.90))
-    assert bt["method"] == "drawdown" and bt["vol_level"] == "alta"
+    assert bt["method"] == "drawdown" and bt["vol_level"] == "high"
     assert bt["price"] == 60.0
     assert bt["signal"] == "wait"  # price 70 > 60
 
@@ -1221,10 +1221,10 @@ def test_buy_target_falls_back_to_drawdown_without_analyst_targets():
 def test_buy_target_unmeasurable_vol_is_conservative_not_low():
     from core.scorers.composite import _buy_target
 
-    # too little history to measure vol -> "n/d", not "baja": apply the full (alta) discount.
+    # too little history to measure vol -> "n/a", not "low": apply the full (high) discount.
     # drawdown anchor 80 * (1 - 0.25) = 60, not 80.
     bt = _buy_target(_bt_snap(95.0, high_52w=100.0, realized_vol=None))
-    assert bt["vol_level"] == "n/d"
+    assert bt["vol_level"] == "n/a"
     assert bt["mos"] == 0.25
     assert bt["price"] == 60.0
 

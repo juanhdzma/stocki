@@ -59,15 +59,15 @@ function renderWlFilterBar() {
   const active = f.action || f.signal || f.sector;
   return `<div class="wl-filters">
     <select class="wl-filter${f.action ? " wl-filter-on" : ""}" onchange="setWlFilter('action', this.value)">
-      <option value="">Acción: todas</option>${actions.map(([v, l]) => opt(v, l, f.action)).join("")}
+      <option value="">Action: all</option>${actions.map(([v, l]) => opt(v, l, f.action)).join("")}
     </select>
     <select class="wl-filter${f.signal ? " wl-filter-on" : ""}" onchange="setWlFilter('signal', this.value)">
-      <option value="">Señal: todas</option>${opt("buy", "Comprar", f.signal)}${opt("wait", "Esperar", f.signal)}
+      <option value="">Signal: all</option>${opt("buy", "Buy", f.signal)}${opt("wait", "Wait", f.signal)}
     </select>
     <select class="wl-filter${f.sector ? " wl-filter-on" : ""}" onchange="setWlFilter('sector', this.value)">
-      <option value="">Sector: todos</option>${sectors.map(s => opt(s, s, f.sector)).join("")}
+      <option value="">Sector: all</option>${sectors.map(s => opt(s, s, f.sector)).join("")}
     </select>
-    ${active ? `<button class="wl-filter-clear" onclick="clearWlFilters()">✕ limpiar</button>` : ""}
+    ${active ? `<button class="wl-filter-clear" onclick="clearWlFilters()">✕ clear</button>` : ""}
   </div>`;
 }
 
@@ -134,7 +134,7 @@ function renderHomeSections() {
                 <button class="btn-remove" onclick="removeTicker('${t}')">✕</button>`,
           false
         )
-        : `<p class="subtext center" style="margin:24px 0">Sin resultados para el filtro.</p>`}
+        : `<p class="subtext center" style="margin:24px 0">No results for this filter.</p>`}
     </section>`;
   }
 

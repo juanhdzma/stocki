@@ -42,7 +42,7 @@ export const SCORE_COLS_INTERMEDIATE = [
   { key: "growth",      label: "Growth"    },
   { key: "quality",     label: "Quality"   },
   { key: "insiders",    label: "Insiders"  },
-  { key: "price_long",  label: "Sentimiento" },
+  { key: "price_long",  label: "Sentiment" },
 ];
 
 export const SCORE_COLS_FINAL = [
@@ -53,12 +53,12 @@ export const SCORE_COLS = [...SCORE_COLS_INTERMEDIATE, ...SCORE_COLS_FINAL];
 
 // One compact symbol per row: fetch in progress / all good / something failed.
 export function renderStatusSymbol(status) {
-  if (!status) return `<span class="subtext" title="Pendiente">·</span>`;
+  if (!status) return `<span class="subtext" title="Pending">·</span>`;
   const states = ["snap", "fund", "qtrs", "ins", "score"].map(k => status[k]);
-  if (states.includes("yellow")) return `<span class="s-yellow" title="En proceso">⟳</span>`;
-  if (states.includes("red"))    return `<span class="s-red" title="Falló un fetch">✕</span>`;
+  if (states.includes("yellow")) return `<span class="s-yellow" title="In progress">⟳</span>`;
+  if (states.includes("red"))    return `<span class="s-red" title="Fetch failed">✕</span>`;
   if (status.score === "green")  return `<span class="s-green" title="OK">✓</span>`;
-  return `<span class="subtext" title="Datos parciales">·</span>`;
+  return `<span class="subtext" title="Partial data">·</span>`;
 }
 
 export function renderTickerTable(tickers, sc, sd, sortFnName, actionCell, pfCols = false) {
@@ -107,7 +107,7 @@ export function renderTickerTable(tickers, sc, sd, sortFnName, actionCell, pfCol
     ${SCORE_COLS_FINAL.map((c, i) => i === 0 ? sepTh(c, "col-final") : `<th class="col-final sortable-th${c.key === sc ? " sort-active" : ""}" onclick="${sortFnName}('${c.key}')">${c.label}${c.key === sc ? (sd > 0 ? " ↑" : " ↓") : ""}</th>`).join("")}
     ${sortTh("score_delta", "Δ7d", "col-sep")}
     <th class="col-sep">Updated</th>
-    <th title="Estado de datos" style="text-align:center;cursor:default">·</th>
+    <th title="Data status" style="text-align:center;cursor:default">·</th>
     <th></th>
   </tr></thead>`;
 

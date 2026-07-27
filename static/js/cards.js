@@ -92,7 +92,7 @@ function renderScoreCards(tickers, raw) {
       { title: "Growth",   score: fm.score, detail: fmDetails(fm, snap, quarterlies) },
       { title: "Quality",  score: vq.score, detail: vqDetails(vq, snap) },
       { title: "Insiders", score: ic.score, detail: icDetails(ic.sub_scores) },
-      { title: "Sentimiento", score: pl.score, detail: plDetails(pl, snap) },
+      { title: "Sentiment", score: pl.score, detail: plDetails(pl, snap) },
     ].map(c => `
       <div class="score-card">
         <div class="score-card-title">${c.title}</div>

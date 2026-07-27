@@ -208,7 +208,7 @@ export function buildScoreTooltip(ticker, col, d) {
     }
     case "price_long": {
       category = scores.price_long || {};
-      title = "Sentimiento";
+      title = "Sentiment";
       const sub = category.sub_scores || {};
       const max = category.max_pts || {};
       rows = [
@@ -240,7 +240,7 @@ export function buildScoreTooltip(ticker, col, d) {
       }).join("");
       const pl = scores.price_long?.score ?? null;
       rows += `<div class="tt-sub-row" title="Attractive price can lift a good business into STRONG BUY — a rich price never drags it down">
-        <span class="tt-sub-lbl">Sentimiento <span class="subtext">boost</span></span>
+        <span class="tt-sub-lbl">Sentiment <span class="subtext">boost</span></span>
         <div class="tt-sub-bar-wrap">${bar(pl)}</div>
         <span class="tt-sub-val ${scoreColor(pl)}">${pl != null ? pl.toFixed(1) : "—"}</span>
       </div>`;
@@ -265,7 +265,7 @@ export const DELTA_CATEGORY_LABELS = {
   fundamental_momentum: "Growth",
   value_quality:        "Quality",
   insider_conviction:   "Insiders",
-  price_long:           "Sentimiento",
+  price_long:           "Sentiment",
 };
 
 export function deltaBar(label, val, max) {
@@ -285,7 +285,7 @@ export function buildBuyTargetTooltip(ticker, d) {
   const bt = d?.scores?.buy_target;
   const price = d?.snapshot?.price;
   if (!bt || bt.price == null) {
-    return `<div class="tt-head"><span class="tt-ticker">${ticker}</span><span class="subtext" style="margin-left:8px">Sin buy target</span></div>`;
+    return `<div class="tt-head"><span class="tt-ticker">${ticker}</span><span class="subtext" style="margin-left:8px">No buy target</span></div>`;
   }
 
   const $ = v => (v != null ? `$${v.toFixed(2)}` : "—");
@@ -294,21 +294,21 @@ export function buildBuyTargetTooltip(ticker, d) {
 
   const isBuy = bt.signal === "buy";
   const sigCls = isBuy ? "s-green" : "s-red";
-  const sigTxt = isBuy ? "COMPRAR" : "ESPERAR";
+  const sigTxt = isBuy ? "BUY" : "WAIT";
 
-  const volPct = bt.vol != null ? ` prom ${(bt.vol * 100).toFixed(0)}%` : "";
+  const volPct = bt.vol != null ? ` avg ${(bt.vol * 100).toFixed(0)}%` : "";
   const mosPct = (bt.mos * 100).toFixed(0);
-  const volCls = { alta: "s-red", media: "s-yellow", baja: "s-green", "n/d": "s-red" }[bt.vol_level] || "";
-  const volRow = `<div class="tt-sub-row"><span class="tt-sub-lbl">Volatilidad <span class="${volCls}">${bt.vol_level || "—"}</span>${volPct}</span><span class="tt-sub-val" style="margin-left:auto">${bt.mos > 0 ? `−${mosPct}%` : "sin descuento"}</span></div>`;
+  const volCls = { high: "s-red", mid: "s-yellow", low: "s-green", "n/a": "s-red" }[bt.vol_level] || "";
+  const volRow = `<div class="tt-sub-row"><span class="tt-sub-lbl">Volatility <span class="${volCls}">${bt.vol_level || "—"}</span>${volPct}</span><span class="tt-sub-val" style="margin-left:auto">${bt.mos > 0 ? `−${mosPct}%` : "no discount"}</span></div>`;
 
   const vw = bt.vol_windows || {};
   const wins = ["1m", "6m", "12m"].filter(k => vw[k] != null);
   const winRow = wins.length
-    ? `<div class="subtext" style="font-size:10px;margin-top:2px">${wins.map(k => `${k} ${(vw[k] * 100).toFixed(0)}%`).join(" · ")} → prom ${(bt.vol * 100).toFixed(0)}%</div>`
-    : (bt.vol == null ? `<div class="subtext" style="font-size:10px;margin-top:2px">historia &lt; 1 mes → sin medir, margen conservador</div>` : "");
+    ? `<div class="subtext" style="font-size:10px;margin-top:2px">${wins.map(k => `${k} ${(vw[k] * 100).toFixed(0)}%`).join(" · ")} → avg ${(bt.vol * 100).toFixed(0)}%</div>`
+    : (bt.vol == null ? `<div class="subtext" style="font-size:10px;margin-top:2px">history &lt; 1 month → unmeasured, conservative margin</div>` : "");
 
   const vm = (bt.vol_mid * 100).toFixed(0), vh = (bt.vol_high * 100).toFixed(0);
-  const bands = [["baja", `<${vm}%`, "0%"], ["media", `${vm}–${vh}%`, "−12%"], ["alta", `≥${vh}%`, "−25%"]];
+  const bands = [["low", `<${vm}%`, "0%"], ["mid", `${vm}–${vh}%`, "−12%"], ["high", `≥${vh}%`, "−25%"]];
   const legend = `<div class="subtext" style="font-size:10px;display:flex;gap:8px;margin-top:3px">${
     bands.map(([lvl, rng, m]) => `<span${lvl === bt.vol_level ? ` class="${volCls}" style="font-weight:600"` : ""}>${lvl} ${rng} ${m}</span>`).join("")
   }</div>`;
@@ -316,20 +316,20 @@ export function buildBuyTargetTooltip(ticker, d) {
   let head;
   if (bt.method === "p10") {
     head = `
-      <div class="subtext" style="font-size:11px;margin-bottom:4px">Percentil 10 de ${bt.analysts} analistas</div>
-      ${row("Pesimista (low) ×0.8", $(bt.low))}
-      ${row("Mediana (p50) ×0.2", $(bt.p50))}
-      ${row("= Anchor p10", `<b>${$(bt.anchor)}</b>`)}`;
+      <div class="subtext" style="font-size:11px;margin-bottom:4px">10th percentile of ${bt.analysts} analysts</div>
+      ${row("Low ×0.8", $(bt.low))}
+      ${row("Median ×0.2", $(bt.p50))}
+      ${row("= p10 anchor", `<b>${$(bt.anchor)}</b>`)}`;
   } else {
     head = `
-      <div class="subtext" style="font-size:11px;margin-bottom:4px">Pocos analistas (${bt.analysts} &lt; 10) → regla del máximo</div>
-      ${row("Máximo 52 semanas", $(bt.week52_high))}
+      <div class="subtext" style="font-size:11px;margin-bottom:4px">Few analysts (${bt.analysts} &lt; 10) → 52-week-high rule</div>
+      ${row("52-week high", $(bt.week52_high))}
       ${row("−20% = anchor", `<b>${$(bt.anchor)}</b>`)}`;
   }
   const body = `${head}${volRow}${winRow}${legend}${row("= Target", `<b>${$(bt.price)}</b>`)}`;
 
   const cmp = price != null
-    ? `Precio hoy ${$(price)} ${price <= bt.price ? "≤" : ">"} ${$(bt.price)}`
+    ? `Price today ${$(price)} ${price <= bt.price ? "≤" : ">"} ${$(bt.price)}`
     : "";
 
   return `
@@ -346,7 +346,7 @@ export function buildBuyTargetTooltip(ticker, d) {
 
 export function buildDeltaTooltip(ticker, d) {
   const sc = d?.score_change;
-  if (!sc) return `<div class="tt-head"><span class="tt-ticker">${ticker}</span><span class="subtext" style="margin-left:8px">Sin historial de hace 7d</span></div>`;
+  if (!sc) return `<div class="tt-head"><span class="tt-ticker">${ticker}</span><span class="subtext" style="margin-left:8px">No 7d history</span></div>`;
 
   const comp = sc.composite || {};
   const catRows = Object.entries(sc.categories || {})

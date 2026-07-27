@@ -135,21 +135,21 @@ def _composite_long(base: dict, price_long: dict, snapshot: dict) -> dict:
 _BUY_TARGET_DEEP_DD = -0.20  # fallback drawdown from the 52w high when analyst targets aren't trusted
 _BT_MIN_ANALYSTS = 10  # below this, the target distribution is too thin to build a percentile from
 _BT_PERCENTILE = 0.10  # target the ~p10 of the analyst distribution: low + (p/0.5)*(median − low)
-_BT_VOL_MID = 0.40  # realized vol ≥ this → "media" tier; below → "baja"
-_BT_VOL_HIGH = 0.75  # realized vol ≥ this → "alta" tier
-_BT_VOL_MOS = {"baja": 0.0, "media": 0.12, "alta": 0.25}  # extra margin of safety per volatility tier
+_BT_VOL_MID = 0.40  # realized vol ≥ this → "mid" tier; below → "low"
+_BT_VOL_HIGH = 0.75  # realized vol ≥ this → "high" tier
+_BT_VOL_MOS = {"low": 0.0, "mid": 0.12, "high": 0.25}  # extra margin of safety per volatility tier
 
 
 def _vol_tier(vol: float | None) -> tuple[str, float]:
     """Discrete volatility level + its margin-of-safety discount. Unmeasurable vol (too little price
     history — a freshly-listed name) is NOT low vol: assume high risk and demand the full discount."""
     if vol is None:
-        return "n/d", _BT_VOL_MOS["alta"]
+        return "n/a", _BT_VOL_MOS["high"]
     if vol >= _BT_VOL_HIGH:
-        return "alta", _BT_VOL_MOS["alta"]
+        return "high", _BT_VOL_MOS["high"]
     if vol >= _BT_VOL_MID:
-        return "media", _BT_VOL_MOS["media"]
-    return "baja", _BT_VOL_MOS["baja"]
+        return "mid", _BT_VOL_MOS["mid"]
+    return "low", _BT_VOL_MOS["low"]
 
 
 def _buy_target(snapshot: dict) -> dict | None:
@@ -197,7 +197,7 @@ _CATEGORY_LABELS = {
     "fundamental_momentum": "Growth",
     "value_quality": "Quality",
     "insider_conviction": "Insiders",
-    "price_long": "Sentimiento",
+    "price_long": "Sentiment",
 }
 
 _MOVER_MIN_DELTA = 0.05
