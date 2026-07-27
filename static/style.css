@@ -834,3 +834,32 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   transition: background 0.12s;
 }
 .btn-save:hover { background: rgba(63,185,80,0.22); }
+
+.wl-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0 10px;
+}
+.wl-filter {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.wl-filter:hover { border-color: var(--subtext); }
+.wl-filter-on { border-color: var(--blue); color: var(--blue); }
+.wl-filter-clear {
+  background: none;
+  border: none;
+  color: var(--subtext);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 5px 4px;
+}
+.wl-filter-clear:hover { color: var(--red); }

@@ -2,7 +2,7 @@ import { state } from "./state.js";
 import { timeAgo } from "./format.js";
 import { _toggleSort, renderTickerTable, renderPortfolioTable } from "./tables.js";
 import { render, loadPriceTrend } from "./cards.js";
-import { buildTooltip, buildScoreTooltip, buildDeltaTooltip } from "./tooltips.js";
+import { buildScoreTooltip, buildDeltaTooltip, buildBuyTargetTooltip } from "./tooltips.js";
 import { showOverlay, hideTooltip } from "./overlay.js";
 import { priceChartHover, chartHoverEnd } from "./charts.js";
 
@@ -26,6 +26,49 @@ function setWlSort(col) {
   sessionStorage.setItem("wlSortCol", state.wlSortCol);
   sessionStorage.setItem("wlSortDir", state.wlSortDir);
   renderHomeSections();
+}
+
+function filteredWatchlist() {
+  const f = state.wlFilters;
+  return state.watchlist.filter(t => {
+    const d = state.watchlistData[t];
+    if (f.action && d?.scores?.composite_long?.action !== f.action) return false;
+    if (f.signal && d?.scores?.buy_target?.signal !== f.signal) return false;
+    if (f.sector && (d?.snapshot?.sector || "") !== f.sector) return false;
+    return true;
+  });
+}
+
+function setWlFilter(dim, value) {
+  state.wlFilters[dim] = value;
+  sessionStorage.setItem("wlFilters", JSON.stringify(state.wlFilters));
+  renderHomeSections();
+}
+
+function clearWlFilters() {
+  state.wlFilters = { action: "", signal: "", sector: "" };
+  sessionStorage.setItem("wlFilters", JSON.stringify(state.wlFilters));
+  renderHomeSections();
+}
+
+function renderWlFilterBar() {
+  const f = state.wlFilters;
+  const opt = (v, label, cur) => `<option value="${v}"${v === cur ? " selected" : ""}>${label}</option>`;
+  const sectors = [...new Set(state.watchlist.map(t => state.watchlistData[t]?.snapshot?.sector).filter(Boolean))].sort();
+  const actions = [["STRONG-BUY", "Strong Buy"], ["BUY", "Buy"], ["HOLD", "Hold"], ["SELL", "Sell"], ["STRONG-SELL", "Strong Sell"]];
+  const active = f.action || f.signal || f.sector;
+  return `<div class="wl-filters">
+    <select class="wl-filter${f.action ? " wl-filter-on" : ""}" onchange="setWlFilter('action', this.value)">
+      <option value="">Acción: todas</option>${actions.map(([v, l]) => opt(v, l, f.action)).join("")}
+    </select>
+    <select class="wl-filter${f.signal ? " wl-filter-on" : ""}" onchange="setWlFilter('signal', this.value)">
+      <option value="">Señal: todas</option>${opt("buy", "Comprar", f.signal)}${opt("wait", "Esperar", f.signal)}
+    </select>
+    <select class="wl-filter${f.sector ? " wl-filter-on" : ""}" onchange="setWlFilter('sector', this.value)">
+      <option value="">Sector: todos</option>${sectors.map(s => opt(s, s, f.sector)).join("")}
+    </select>
+    ${active ? `<button class="wl-filter-clear" onclick="clearWlFilters()">✕ limpiar</button>` : ""}
+  </div>`;
 }
 
 function editHolding(ticker) {
@@ -79,15 +122,19 @@ function renderHomeSections() {
   }
 
   if (state.watchlist.length) {
+    const wlTickers = filteredWatchlist();
     html += `<section class="cat-section watchlist-section">
-      <h2>Watchlist</h2>
-      ${renderTickerTable(state.watchlist, state.wlSortCol, state.wlSortDir, "setWlSort",
-        t => `${!state.portfolio.includes(t)
-          ? `<button class="btn-move" title="Add to portfolio" onclick="moveToPortfolio('${t}')">↑ PF</button>`
-          : ""}
-              <button class="btn-remove" onclick="removeTicker('${t}')">✕</button>`,
-        false
-      )}
+      <h2>Watchlist <span class="subtext" style="font-size:13px;font-weight:400">${wlTickers.length}/${state.watchlist.length}</span></h2>
+      ${renderWlFilterBar()}
+      ${wlTickers.length
+        ? renderTickerTable(wlTickers, state.wlSortCol, state.wlSortDir, "setWlSort",
+          t => `${!state.portfolio.includes(t)
+            ? `<button class="btn-move" title="Add to portfolio" onclick="moveToPortfolio('${t}')">↑ PF</button>`
+            : ""}
+                <button class="btn-remove" onclick="removeTicker('${t}')">✕</button>`,
+          false
+        )
+        : `<p class="subtext center" style="margin:24px 0">Sin resultados para el filtro.</p>`}
     </section>`;
   }
 
@@ -454,14 +501,14 @@ async function handleImportFile(event) {
 }
 
 // ── Tooltip show wrappers ─────────────────────────────────────────────────────
-function showTooltip(event, ticker){ showOverlay(event, buildTooltip(ticker, state.watchlistData[ticker])); }
 function showScoreTooltip(event, ticker, col){ showOverlay(event, buildScoreTooltip(ticker, col, state.watchlistData[ticker])); }
 function showDeltaTooltip(event, ticker){ showOverlay(event, buildDeltaTooltip(ticker, state.watchlistData[ticker])); }
+function showBuyTargetTooltip(event, ticker){ showOverlay(event, buildBuyTargetTooltip(ticker, state.watchlistData[ticker])); }
 
 Object.assign(window, {
   navigate, handleAddTicker, handleRefreshAll, handleRescore, removeTicker,
-  moveToPortfolio, moveToWatchlist, setPfSort, setWlSort, triggerImport,
-  handleImportFile, showTooltip, showScoreTooltip, showDeltaTooltip, hideTooltip,
+  moveToPortfolio, moveToWatchlist, setPfSort, setWlSort, setWlFilter, clearWlFilters, triggerImport,
+  handleImportFile, showScoreTooltip, showDeltaTooltip, showBuyTargetTooltip, hideTooltip,
   editHolding, saveHolding, cancelEdit, handleRefreshPortfolio,
   priceChartHover, chartHoverEnd,
 });

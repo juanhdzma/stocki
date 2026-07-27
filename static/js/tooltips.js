@@ -1,77 +1,5 @@
 import { scoreColor, scoreColorVar, pctScoreColor, actionBadge } from "./colors.js";
-import { miniGroupedChart, priceTargetBar, analystBar } from "./charts.js";
 import { escapeHtml } from "./format.js";
-
-// ── Hover Tooltip ─────────────────────────────────────────────────────────────
-export function buildTooltip(ticker, d) {
-  if (!d) return `<div class="tt-head"><span class="tt-ticker">${ticker}</span><span class="subtext" style="margin-left:8px">No data — click to load</span></div>`;
-
-  const snap   = d.snapshot || {};
-  const scores = d.scores   || {};
-  const annuals  = (d.annuals    || []).slice().reverse();
-  const quarters = (d.quarterlies || []).slice().reverse();
-  const txs = d.insider_transactions || [];
-
-  const price  = snap.price;
-  const pct52h = snap.pct_from_52w_high;
-  const pct52hStr = pct52h != null ? `${(pct52h * 100).toFixed(1)}% from 52W high` : "";
-  const pct52hCls = pct52h != null ? pctScoreColor(pct52h, 0.30) : "";
-
-  const comp = scores.composite_long || {};
-
-  const CW = 440;
-  const annualChart  = miniGroupedChart(
-    annuals.map(f => f.revenue),  annuals.map(f => f.net_income),  annuals.map(f => f.period),  CW);
-  const quarterChart = miniGroupedChart(
-    quarters.map(f => f.revenue), quarters.map(f => f.net_income), quarters.map(f => f.period), CW);
-
-  const ptBar = priceTargetBar(price, snap.target_low, snap.target_mean, snap.target_high, 440, 64);
-
-  const today = new Date();
-  const ago90 = new Date(today); ago90.setDate(today.getDate() - 90);
-  const recent  = txs.filter(tx => tx.trade_date && new Date(tx.trade_date) >= ago90);
-  const buys3m  = recent.filter(tx => (tx.trade_type || "").startsWith("P")).length;
-  const sells3m = recent.filter(tx => (tx.trade_type || "").startsWith("S")).length;
-  const icScore = scores.insider_conviction?.score ?? null;
-
-  const p   = v => v != null ? `$${Number(v).toFixed(2)}` : "—";
-  const pct = v => v != null ? `${(Number(v) * 100).toFixed(1)}%` : "—";
-  const dec = v => v != null ? Number(v).toFixed(1) : "—";
-
-  return `
-<div class="tt-head">
-  <span class="tt-ticker">${ticker}</span>
-  <span class="tt-price">${price ? p(price) : "—"}</span>
-  ${pct52hStr ? `<span class="tt-52h ${pct52hCls}">${pct52hStr}</span>` : ""}
-  <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
-    ${actionBadge(scores)}
-    ${comp.score != null ? `<span class="tt-comp-score">${comp.score.toFixed(1)}</span>` : ""}
-  </span>
-</div>
-<div class="tt-chart-legend">
-  <span class="tt-legend-rev">■ Revenue</span>
-  <span class="tt-legend-ni">■ Net Income</span>
-</div>
-<div>
-  <div class="tt-chart-lbl">Annual</div>
-  <div class="tt-chart">${annualChart || "<span class='subtext'>—</span>"}</div>
-</div>
-<div style="margin-top:8px">
-  <div class="tt-chart-lbl">Quarterly</div>
-  <div class="tt-chart">${quarterChart || "<span class='subtext'>—</span>"}</div>
-</div>
-${ptBar ? `<div class="tt-section-lbl">Analyst Targets</div><div class="tt-chart">${ptBar}</div>` : ""}
-<div class="tt-metrics">
-  <div class="tt-metric"><span class="tt-ml">52W Low</span><span class="tt-mv">${p(snap.week52_low)}</span></div>
-  <div class="tt-metric"><span class="tt-ml">52W High</span><span class="tt-mv">${p(snap.week52_high)}</span></div>
-  <div class="tt-metric"><span class="tt-ml">vs 52W Hi</span><span class="tt-mv ${pct52hCls}">${pct(snap.pct_from_52w_high)}</span></div>
-  <div class="tt-metric"><span class="tt-ml">vs 1W Hi</span><span class="tt-mv ${snap.pct_from_1w_high != null ? pctScoreColor(snap.pct_from_1w_high, 0.10) : ""}">${pct(snap.pct_from_1w_high)}</span></div>
-</div>
-<div class="tt-analyst">
-  <span class="tt-ml">${snap.analyst_count != null ? snap.analyst_count + " analysts" : "—"}</span>
-  <div style="margin-top:6px">${analystBar(snap.rec_strong_buy, snap.rec_buy, snap.rec_hold, snap.rec_sell, snap.rec_strong_sell, 440)}</div>
-</div>`;
-}
 
 // ── Score detail tooltip ──────────────────────────────────────────────────────
 export function subScoreBar(label, val, max) {
@@ -351,6 +279,54 @@ export function deltaBar(label, val, max) {
     <div class="tt-sub-bar-wrap"><div class="tt-sub-bar" style="width:${pct.toFixed(0)}%;background:${barColor}"></div></div>
     <span class="tt-sub-val ${numCls}">${sign}${rounded}</span>
   </div>`;
+}
+
+export function buildBuyTargetTooltip(ticker, d) {
+  const bt = d?.scores?.buy_target;
+  const price = d?.snapshot?.price;
+  if (!bt || bt.price == null) {
+    return `<div class="tt-head"><span class="tt-ticker">${ticker}</span><span class="subtext" style="margin-left:8px">Sin buy target</span></div>`;
+  }
+
+  const $ = v => (v != null ? `$${v.toFixed(2)}` : "—");
+  const row = (lbl, val, extra = "") =>
+    `<div class="tt-sub-row"><span class="tt-sub-lbl">${lbl}</span><span class="tt-sub-val" style="margin-left:auto">${val}</span>${extra}</div>`;
+
+  const isBuy = bt.signal === "buy";
+  const sigCls = isBuy ? "s-green" : "s-red";
+  const sigTxt = isBuy ? "COMPRAR" : "ESPERAR";
+
+  let body;
+  if (bt.method === "p10") {
+    const volPct = bt.vol != null ? `${(bt.vol * 100).toFixed(0)}%` : "—";
+    const mosPct = `${(bt.mos * 100).toFixed(0)}%`;
+    body = `
+      <div class="subtext" style="font-size:11px;margin-bottom:4px">Percentil 10 de ${bt.analysts} analistas</div>
+      ${row("Pesimista (low) ×0.8", $(bt.low))}
+      ${row("Mediana (p50) ×0.2", $(bt.p50))}
+      ${row("= Anchor p10", `<b>${$(bt.anchor)}</b>`)}
+      ${row(`Volatilidad ${volPct} → margen`, `−${mosPct}`)}`;
+  } else {
+    body = `
+      <div class="subtext" style="font-size:11px;margin-bottom:4px">Pocos analistas (${bt.analysts} &lt; 10) → regla del máximo</div>
+      ${row("Máximo 52 semanas", $(bt.week52_high))}
+      ${row("−20%", `<b>${$(bt.price)}</b>`)}`;
+  }
+
+  const cmp = price != null
+    ? `Precio hoy ${$(price)} ${price <= bt.price ? "≤" : ">"} ${$(bt.price)}`
+    : "";
+
+  return `
+<div class="tt-head">
+  <span class="tt-ticker">${ticker}</span>
+  <span class="subtext" style="margin-left:4px;font-size:11px">Buy Target</span>
+  <span class="${sigCls}" style="margin-left:auto;font-weight:700">${sigTxt} ${$(bt.price)}</span>
+</div>
+<div class="tt-subs">
+  ${body}
+  <div style="border-top:1px solid var(--border);padding-top:5px;margin-top:5px;font-size:11px" class="${sigCls}">${cmp} → ${sigTxt}</div>
+</div>`;
 }
 
 export function buildDeltaTooltip(ticker, d) {

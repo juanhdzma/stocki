@@ -148,22 +148,38 @@ def _buy_target(snapshot: dict) -> dict | None:
 
     low = snapshot.get("target_low")
     p50 = snapshot.get("target_median") or snapshot.get("target_mean")  # true p50, mean as a fallback
-    nac = snapshot.get("analyst_count") or 0
+    nac = int(snapshot.get("analyst_count") or 0)
     if nac >= _BT_MIN_ANALYSTS and low and low > 0 and p50 and p50 > 0:
         anchor = low + (_BT_PERCENTILE / 0.5) * (p50 - low)  # interpolate the low percentile p0→p50
         vol = snapshot.get("realized_vol")
         mos = clamp((vol - _BT_VOL_PIVOT) * _BT_VOL_SLOPE, 0.0, _BT_VOL_MOS_MAX) if vol else 0.0
         target = anchor * (1 - mos)
+        detail = {
+            "method": "p10",
+            "analysts": nac,
+            "low": round(low, 2),
+            "p50": round(p50, 2),
+            "anchor": round(anchor, 2),
+            "vol": round(vol, 4) if vol else None,
+            "mos": round(mos, 4),
+        }
     else:
         w52h = snapshot.get("week52_high")
         if not w52h or w52h <= 0:
             return None
         target = w52h * (1 + _BUY_TARGET_DEEP_DD)
+        detail = {
+            "method": "drawdown",
+            "analysts": nac,
+            "week52_high": round(w52h, 2),
+            "dd": _BUY_TARGET_DEEP_DD,
+        }
 
     return {
         "price": round(target, 2),
         "pct_from_current": round(target / price - 1, 4),
         "signal": "buy" if price <= target else "wait",
+        **detail,
     }
 
 
