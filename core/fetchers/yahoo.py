@@ -252,15 +252,15 @@ def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str,
         return {}
 
 
-# ── Typical pullback depth (for buy_target) ──────────────────────────────────
+# ── Realized volatility (for buy_target's margin of safety) ───────────────────
 
 
-def _compute_typical_pullback(ticker: str, hist: pd.DataFrame | None = None) -> float | None:
-    """Median depth of this ticker's own peak-to-trough drawdown episodes (≥5%) over 2y.
+def _compute_realized_vol(ticker: str, hist: pd.DataFrame | None = None, window: int = 252) -> float | None:
+    """Annualized realized volatility (stdev of daily returns) over the trailing `window` days.
 
-    Used by buy_target to calibrate how deep a "normal" dip is for THIS ticker, instead
-    of a fixed margin — a name that routinely pulls back 25% needs a different entry
-    discount than one that rarely dips more than 8%.
+    A robust "how much does this actually move" measure. buy_target widens its margin of safety
+    for volatile names, and the yfinance `beta` field is null for exactly the movers that matter
+    (recent spinoffs/IPOs like SNDK), so this is used instead.
     """
     try:
         if hist is not None and not hist.empty:
@@ -268,7 +268,7 @@ def _compute_typical_pullback(ticker: str, hist: pd.DataFrame | None = None) -> 
             closes = closes_all[ticker] if ticker in closes_all.columns else pd.Series(dtype=float)
             closes = closes.dropna()
         else:
-            raw = yf.download(ticker, period="2y", interval="1d", auto_adjust=True, progress=False)
+            raw = yf.download(ticker, period="1y", interval="1d", auto_adjust=True, progress=False)
             if raw.empty:
                 return None
             closes = raw["Close"]
@@ -276,26 +276,13 @@ def _compute_typical_pullback(ticker: str, hist: pd.DataFrame | None = None) -> 
                 closes = closes[ticker] if ticker in closes.columns else closes.iloc[:, 0]
             closes = closes.dropna()
 
-        if len(closes) < 60:
+        c = closes.to_numpy()[-window:]
+        if len(c) < 60:
             return None
-
-        drawdown = closes / closes.cummax() - 1.0
-
-        troughs = []
-        cur_min, active = 0.0, False
-        for v in drawdown:
-            if v <= -0.05:
-                active = True
-                cur_min = min(cur_min, v)
-            elif active:
-                troughs.append(cur_min)
-                active, cur_min = False, 0.0
-        if active:
-            troughs.append(cur_min)
-
-        return abs(float(np.median(troughs))) if troughs else None
+        rets = np.diff(c) / c[:-1]
+        return float(np.std(rets) * np.sqrt(252))
     except Exception as exc:
-        log.debug("[%s] typical-pullback computation failed: %s", ticker, exc)
+        log.debug("[%s] realized-vol computation failed: %s", ticker, exc)
         return None
 
 
@@ -438,7 +425,7 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
 
     returns = _compute_returns(ticker, hist)
     pct_from_1w_high = _compute_1w_pct(ticker, price, hist)
-    typical_pullback_pct = _compute_typical_pullback(ticker, hist)
+    realized_vol = _compute_realized_vol(ticker, hist)
 
     # Price sanity: a spurious quote (split-mismatch, bad tick) deviates wildly from the prior
     # close. Flag it so scores built on it can be treated with suspicion instead of silently
@@ -465,7 +452,7 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "week52_high": week52_high,
         "pct_from_52w_high": pct_from_52w_high,
         "pct_from_1w_high": pct_from_1w_high,
-        "typical_pullback_pct": typical_pullback_pct,
+        "realized_vol": realized_vol,
         "day_change_pct": day_change_pct,
         "ath": ath,
         "beta": _f(info.get("beta")),
@@ -512,6 +499,7 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         # Analyst
         "target_low": _f(info.get("targetLowPrice")),
         "target_mean": _f(info.get("targetMeanPrice")),
+        "target_median": _f(info.get("targetMedianPrice")),
         "target_high": _f(info.get("targetHighPrice")),
         "analyst_count": _f(info.get("numberOfAnalystOpinions")),
         "recommendation_mean": _f(info.get("recommendationMean")),
@@ -526,6 +514,30 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
 
 def fetch_earnings_dates(ticker: str) -> list[str]:
     return _compute_earnings_dates(yf.Ticker(ticker))
+
+
+def fetch_grade_history(ticker: str) -> list[dict]:
+    """Dated analyst rating/target changes (yfinance upgrades_downgrades). Each firm's most
+    recent row on/before a date is its active rating+target then — enough to reconstruct the
+    recommendation distribution and mean target as they stood on any past date (backtesting)."""
+    try:
+        df = yf.Ticker(ticker).upgrades_downgrades
+        if df is None or df.empty:
+            return []
+        out = []
+        for gd, row in df.iterrows():
+            out.append(
+                {
+                    "date": gd.strftime("%Y-%m-%d"),
+                    "firm": str(row.get("Firm") or "").strip(),
+                    "to_grade": str(row.get("ToGrade") or "").strip(),
+                    "target": _f(row.get("currentPriceTarget")),
+                }
+            )
+        return out
+    except Exception as exc:
+        log.debug("[%s] grade-history fetch failed: %s", ticker, exc)
+        return []
 
 
 def fetch_portfolio_price(ticker: str, hist: pd.DataFrame | None = None) -> dict:

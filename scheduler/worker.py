@@ -118,7 +118,7 @@ async def refresh_one(ticker: str, hist=None, force: bool = False) -> None:
                 log.info("[%s] fetching snapshot", ticker)
                 try:
                     if hist is None:
-                        # Without pre-fetched history, _compute_returns/_compute_typical_pullback
+                        # Without pre-fetched history, _compute_returns/_compute_realized_vol
                         # each fall back to their own separate yf.download — one batched call
                         # covers both and matches the speed of the bulk refresh_all() path.
                         hist = await asyncio.to_thread(batch_download_history, [ticker])

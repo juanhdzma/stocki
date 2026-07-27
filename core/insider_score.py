@@ -372,13 +372,17 @@ def compute_insider_score(
     days_back: int = 365,
     _already_normalized: bool = False,
     earnings_dates: list[str] | None = None,
+    as_of: datetime | None = None,
 ) -> dict:
     """
     Returns dict with keys: score (0..100), valid_buys, valid_sells.
     50 = neutral | >50 = net buying | <50 = net selling.
+
+    as_of anchors the time-decay and the days_back window (default: now). Pass a naive
+    datetime to evaluate the score as it would have read on a past date (backtesting).
     """
     txs = transactions_raw if _already_normalized else normalize(transactions_raw)
-    now = datetime.now(UTC).replace(tzinfo=None)
+    now = as_of if as_of is not None else datetime.now(UTC).replace(tzinfo=None)
     cutoff = now - timedelta(days=days_back)
     txs = [tx for tx in txs if tx.get("trade_date") and tx["trade_date"] >= cutoff]
     valid = _filter(txs, market_cap)

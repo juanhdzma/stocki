@@ -41,10 +41,10 @@ export function riskFlags(scores) {
 
 export function fmtBuyTargetHtml(bt) {
   if (!bt || bt.price == null) return "—";
-  const thr = `<span class="subtext" style="font-size:10px">≤ $${bt.price.toFixed(2)}</span>`;
   if (bt.signal === "buy") {
-    return `<span class="s-green" style="font-weight:600">COMPRAR</span> ${thr}`;
+    return `<span class="s-green" style="font-weight:600">COMPRAR</span>`;
   }
+  const thr = `<span class="subtext" style="font-size:10px">≤ $${bt.price.toFixed(2)}</span>`;
   const pct = bt.pct_from_current;
   const near = pct != null && pct >= -0.04;
   const cls = near ? "s-yellow" : "s-red";

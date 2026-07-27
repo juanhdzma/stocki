@@ -162,10 +162,7 @@ CSS classes: `.action-STRONG-BUY`, `.action-BUY`, `.action-HOLD`, `.action-SELL`
 
 ## `buy_target` — buy-now vs wait-for-a-dip signal (`composite.py::_buy_target`)
 
-Anchored on the **current price** (a modest pullback from here), NOT a position in the full 52-week range — calibrated against real per-ticker judgement. Three regimes:
-1. **Washed out** — within `_BUY_TARGET_LOW_ZONE` (8%) of the 52w low → it has bottomed → BUY now.
-2. **Rising** (`trend ≥ 0`) — wait for a dip that grows with the log of the 12m run (froth), scaled by the ticker's own `typical_pullback_pct` (bounded [0.7, 1.4], centered at 1.0; `None` → 1.0). Capped at `_BUY_TARGET_FROTH_MAX` (11%).
-3. **Falling** — wait toward the 52w low (`low + 0.45·(price − low)`), capped at a 6% dip.
+Anchored on the **drawdown from the 52-week high**. One out-of-sample-validated entry setup earns *buy now*: **deep value** — a name trading at/below `_BUY_TARGET_DEEP_DD` (−20%) off its 52w high. Beaten-down quality mean-reverts up, the deeper the drawdown the stronger the rebound (`entry_lab.py`: buying names ≥20% off their high beat buying anything else by ~+11pp over 6m; a "buy the pullback in an uptrend" regime was tried and **dropped** because it only diluted that edge). Anything not deep enough **waits** toward the deep-value zone (`week52_high · (1 + _BUY_TARGET_DEEP_DD)`). This is a mean-reversion bet — strong in a recovery, weak in a sustained bear — so it leans on the watchlist actually being quality names, not broken ones.
 
 Returns `{price, pct_from_current, signal}` where `signal` is `"buy"` (price ≤ target) or `"wait"`. Frontend (`fmtBuyTargetHtml`): **COMPRAR** (green) / **CASI −X%** (amber, dip ≤4%) / **ESPERAR −X%** (red), always with the `≤ $threshold`.
 

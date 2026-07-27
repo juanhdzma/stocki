@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from datetime import UTC, datetime
 
 from core.insider_score import compute_insider_score, normalize
@@ -28,7 +27,7 @@ _THRESHOLDS = [
 ]
 
 
-def _insider(snapshot: dict) -> dict:
+def _insider(snapshot: dict, as_of: datetime | None = None) -> dict:
     txs = snapshot.get("insider_transactions", [])
     mc = snapshot.get("market_cap")
     w52l = snapshot.get("week52_low")
@@ -45,6 +44,7 @@ def _insider(snapshot: dict) -> dict:
         days_back=365,
         _already_normalized=True,
         earnings_dates=snapshot.get("earnings_dates"),
+        as_of=as_of,
     )
 
     # No transactions survive the value/role/routine filters → no signal, not "neutral".
@@ -118,75 +118,45 @@ def _composite_long(base: dict, price_long: dict, snapshot: dict) -> dict:
     return {"score": score, "action": _action(score), "weights": weights_pct}
 
 
-# buy_target answers one question: buy now, or wait for a dip to $X? It's anchored on the
-# CURRENT price (a modest pullback from here), NOT a position in the full 52-week range —
-# calibrated against real per-ticker judgement. Three regimes:
-#   1. Washed out — trading within a hair of its 52-week low → it has bottomed → BUY now
-#      (ORCL at its low, TSLA/ISRG near theirs).
-#   2. Rising — wait for a modest dip below the current price, deeper the harder it ran
-#      (froth grows with the log of the 12m run: AVGO +33% → ~-2%, MU +726% → ~-9%). A stock
-#      that barely moved gets almost no dip; a parabola gets a real (but capped) one.
-#   3. Falling — wait toward its 52-week low, the natural support it's dropping toward
-#      (target sits part-way between the current price and the low: CRM→~150, PLTR→~112).
-_BUY_TARGET_LOW_ZONE = 0.08  # within this % above the 52w low → washed out → BUY
-_BUY_TARGET_FROTH_K = 0.045  # rising: dip = this × ln(1 + run-up)
-_BUY_TARGET_FROTH_MIN = 0.01  # even a barely-rising name gets a token dip
-_BUY_TARGET_FROTH_MAX = 0.11  # cap the froth dip so a mega-parabola stays fillable
-_BUY_TARGET_FALL_FRAC = 0.45  # falling: target = low + this × (price − low)
-_BUY_TARGET_FALL_MAX = 0.06  # but never a wait deeper than this (a far-off low shouldn't overshoot)
-
-# The rising dip is scaled by the ticker's OWN typical pullback vs. a ~10% reference: a name
-# that routinely dips 25% deserves a deeper entry than one that rarely dips past 8% for the
-# same run. Bounded and centered at 1.0, so median-volatility names are unchanged (preserves
-# the calibration); no pullback history → 1.0 (no scaling).
-_BUY_TARGET_VOL_REF = 0.10
-_BUY_TARGET_VOL_LO = 0.70
-_BUY_TARGET_VOL_HI = 1.40
-
-_BUY_TARGET_TREND_KEYS = (
-    "ticker_return_12m",
-    "ticker_return_6m",
-    "ticker_return_3m",
-    "ticker_return_1m",
-)
-
-
-def _buy_target_trend(snapshot: dict) -> float:
-    # Longest-available price return: the sustained trajectory, not last week's noise.
-    returns = snapshot.get("returns") or {}
-    for key in _BUY_TARGET_TREND_KEYS:
-        v = returns.get(key)
-        if v is not None:
-            return v
-    return 0.0
+# buy_target answers: buy now, or wait for a dip to $X? The entry price is the ~10th percentile of the
+# analyst price-target distribution, interpolated between the LOW (the min, p0) and the MEDIAN (p50) —
+# a conservative, outlier-robust anchor grounded in forward fundamentals rather than a single
+# 52-week-high print (which a momentum name's bubble peak makes meaningless — real case: SNDK ran
+# 40→2354 in a year, so 80% of its high = $1888 was a nonsense "buy" above the current price). That p10
+# anchor is then discounted by a margin of safety that WIDENS with how much the name actually moves
+# (realized_vol): SNDK's ~110% vol widens its MOS to the cap, pulling the target below price (→ wait),
+# while a calm name like AAPL (~25% vol) barely moves off the raw anchor. Two things were tried and
+# dropped: an analyst-count weighting (arbitrary pivot; the percentile encodes conservatism directly)
+# and a momentum widener (double-counts with vol on exactly the bubble names — bt_lab).
+# NOT return-validated (analyst targets aren't in a price-only backtest) — behavior-tuned; the knobs
+# below are hand-picked. Fallback for the ~1% with no analyst coverage: the −20%-off-52w-high zone, an
+# out-of-sample-validated mean-reversion entry (entry_lab.py: ≥20% off the high beat all else ~+11pp/6m).
+_BUY_TARGET_DEEP_DD = -0.20  # fallback drawdown from the 52w high when analyst targets are absent
+_BT_PERCENTILE = 0.10  # target the ~p10 of the analyst distribution: low + (p/0.5)*(median − low)
+_BT_VOL_PIVOT = 0.35  # realized vol above which the margin of safety starts widening
+_BT_VOL_SLOPE = 0.6
+_BT_VOL_MOS_MAX = 0.25
 
 
 def _buy_target(snapshot: dict) -> dict | None:
     price = snapshot.get("price")
-    low_52w = snapshot.get("week52_low")
-    if not price or low_52w is None or low_52w <= 0:
+    if not price:
         return None
 
-    trend = _buy_target_trend(snapshot)
-
-    if (price - low_52w) / price <= _BUY_TARGET_LOW_ZONE:
-        target = price  # washed out at its low → buy now
-    elif trend >= 0:  # rising → modest dip, deeper if frothy
-        pull = snapshot.get("typical_pullback_pct")
-        vol_mult = (
-            clamp(pull / _BUY_TARGET_VOL_REF, _BUY_TARGET_VOL_LO, _BUY_TARGET_VOL_HI)
-            if pull
-            else 1.0
-        )
-        dip = clamp(
-            _BUY_TARGET_FROTH_K * math.log1p(trend) * vol_mult,
-            _BUY_TARGET_FROTH_MIN,
-            _BUY_TARGET_FROTH_MAX,
-        )
-        target = price * (1 - dip)
-    else:  # falling → toward the low, capped
-        target = low_52w + _BUY_TARGET_FALL_FRAC * (price - low_52w)
-        target = max(target, price * (1 - _BUY_TARGET_FALL_MAX))
+    low = snapshot.get("target_low")
+    p50 = snapshot.get("target_median") or snapshot.get("target_mean")  # true p50, mean as a fallback
+    if low and low > 0 and p50 and p50 > 0:
+        anchor = low + (_BT_PERCENTILE / 0.5) * (p50 - low)  # interpolate the low percentile p0→p50
+        vol = snapshot.get("realized_vol")
+        mos = clamp((vol - _BT_VOL_PIVOT) * _BT_VOL_SLOPE, 0.0, _BT_VOL_MOS_MAX) if vol else 0.0
+        target = anchor * (1 - mos)
+    elif low and low > 0:
+        target = low
+    else:
+        w52h = snapshot.get("week52_high")
+        if not w52h or w52h <= 0:
+            return None
+        target = w52h * (1 + _BUY_TARGET_DEEP_DD)
 
     return {
         "price": round(target, 2),
@@ -252,10 +222,10 @@ def diff_scores(old: dict | None, new: dict | None) -> dict | None:
 _EARNINGS_SOON_DAYS = 7
 
 
-def _days_to_earnings(dates: list | None) -> int | None:
+def _days_to_earnings(dates: list | None, as_of: datetime | None = None) -> int | None:
     if not dates:
         return None
-    today = datetime.now(UTC).date()
+    today = as_of.date() if as_of is not None else datetime.now(UTC).date()
     future = []
     for ds in dates:
         try:
@@ -293,7 +263,9 @@ def _is_cyclical_surge(fundamentals: list[dict], snapshot: dict) -> bool:
     return False
 
 
-def _risk_flags(fundamentals: list[dict], price_long: dict, snapshot: dict) -> list[dict]:
+def _risk_flags(
+    fundamentals: list[dict], price_long: dict, snapshot: dict, as_of: datetime | None = None
+) -> list[dict]:
     flags: list[dict] = []
     rev_g = snapshot.get("revenue_growth")
     if rev_g is not None and rev_g < 0:
@@ -315,7 +287,7 @@ def _risk_flags(fundamentals: list[dict], price_long: dict, snapshot: dict) -> l
             }
         )
 
-    days = _days_to_earnings(snapshot.get("earnings_dates"))
+    days = _days_to_earnings(snapshot.get("earnings_dates"), as_of)
     if days is not None and days <= _EARNINGS_SOON_DAYS:
         flags.append(
             {
@@ -347,11 +319,11 @@ def _risk_flags(fundamentals: list[dict], price_long: dict, snapshot: dict) -> l
     return flags
 
 
-def compute_all(fundamentals: list[dict], snapshot: dict) -> dict:
+def compute_all(fundamentals: list[dict], snapshot: dict, as_of: datetime | None = None) -> dict:
     base = {
         "fundamental_momentum": fm_score(fundamentals, snapshot),
         "value_quality": vq_score(fundamentals, snapshot),
-        "insider_conviction": _insider(snapshot),
+        "insider_conviction": _insider(snapshot, as_of),
     }
     price_long = pl_score(fundamentals, snapshot)
 
@@ -360,5 +332,5 @@ def compute_all(fundamentals: list[dict], snapshot: dict) -> dict:
         "price_long": price_long,
         "composite_long": _composite_long(base, price_long, snapshot),
         "buy_target": _buy_target(snapshot),
-        "flags": _risk_flags(fundamentals, price_long, snapshot),
+        "flags": _risk_flags(fundamentals, price_long, snapshot, as_of),
     }

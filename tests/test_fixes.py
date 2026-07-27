@@ -1154,78 +1154,73 @@ def test_diff_scores_none_when_composite_score_missing():
     assert diff_scores(old, new) is None
 
 
-def _bt_snap(price, low_52w, ret12=None, high_52w=None, **extra):
-    snap = {
-        "price": price,
-        "week52_low": low_52w,
-        "week52_high": high_52w if high_52w is not None else low_52w * 4,
-    }
-    if ret12 is not None:
-        snap["returns"] = {"ticker_return_12m": ret12}
+def _bt_snap(price, high_52w, ret6=None, **extra):
+    snap = {"price": price, "week52_high": high_52w}
+    if ret6 is not None:
+        snap["returns"] = {"ticker_return_6m": ret6}
     snap.update(extra)
     return snap
 
 
-def test_buy_target_washed_out_at_low_is_buy():
+def test_buy_target_below_analyst_low_is_buy():
     from core.scorers.composite import _buy_target
 
-    # ORCL-shape: trading right at its 52w low -> bottomed -> BUY now.
-    bt = _buy_target(_bt_snap(115.0, low_52w=114.8, ret12=-0.52))
+    # at/below the most bearish analyst target -> margin of safety -> buy now.
+    bt = _buy_target(_bt_snap(90.0, high_52w=200.0, target_low=100.0))
+    assert bt["signal"] == "buy"
+    assert bt["price"] == 100.0
+
+
+def test_buy_target_above_analyst_low_waits():
+    from core.scorers.composite import _buy_target
+
+    # above even the bearish analyst -> wait down toward that floor (target_low < price).
+    bt = _buy_target(_bt_snap(120.0, high_52w=200.0, target_low=100.0))
+    assert bt["signal"] == "wait"
+    assert bt["price"] == 100.0
+
+
+def test_buy_target_p10_anchor_widened_by_vol():
+    from core.scorers.composite import _buy_target
+
+    # p10 = low + (0.10/0.5)*(median - low) = 100 + 0.2*(200-100) = 120.
+    calm = _bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0, realized_vol=0.35)
+    bt = _buy_target(calm)
+    assert bt["price"] == 120.0
     assert bt["signal"] == "buy"
 
-
-def test_buy_target_rising_waits_for_modest_dip():
-    from core.scorers.composite import _buy_target
-
-    # AVGO-shape: rising, not near its low -> wait for a small dip below the current price.
-    bt = _buy_target(_bt_snap(382.0, low_52w=282.0, high_52w=495.0, ret12=0.33))
+    # same name but wild (vol 1.10) -> MOS caps at 0.25 -> 120*0.75 = 90 -> now a wait.
+    wild = _bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0, realized_vol=1.10)
+    bt = _buy_target(wild)
+    assert bt["price"] == 90.0
     assert bt["signal"] == "wait"
-    assert bt["price"] < 382.0
-    assert bt["pct_from_current"] > -0.06  # a modest dip, not a deep one
 
 
-def test_buy_target_bigger_run_means_deeper_dip():
+def test_buy_target_p50_falls_back_to_mean_without_median():
     from core.scorers.composite import _buy_target
 
-    # froth: a parabola gets a deeper (but capped) dip than a mildly rising name.
-    common = {"low_52w": 100.0, "high_52w": 1000.0}
-    mild = _buy_target(_bt_snap(500.0, ret12=0.30, **common))
-    parab = _buy_target(_bt_snap(500.0, ret12=7.0, **common))
-    assert parab["price"] < mild["price"]
+    # no median -> mean stands in as p50: 100 + 0.2*(200-100) = 120.
+    bt = _buy_target(_bt_snap(105.0, high_52w=300.0, target_low=100.0, target_mean=200.0))
+    assert bt["price"] == 120.0
 
 
-def test_buy_target_froth_dip_is_capped():
-    from core.scorers.composite import _BUY_TARGET_FROTH_MAX, _buy_target
-
-    # SNDK-shape: +3316% run -> deep dip, but capped so it stays fillable.
-    bt = _buy_target(_bt_snap(1437.0, low_52w=40.0, high_52w=2354.0, ret12=33.0))
-    assert bt["pct_from_current"] >= -_BUY_TARGET_FROTH_MAX - 1e-9
-
-
-def test_buy_target_falling_targets_toward_the_low():
+def test_buy_target_falls_back_to_drawdown_without_analyst_targets():
     from core.scorers.composite import _buy_target
 
-    # PLTR/CRM-shape: falling, not at its low -> wait toward the 52w low (part-way down).
-    bt = _buy_target(_bt_snap(123.0, low_52w=106.0, high_52w=208.0, ret12=-0.21))
-    assert bt["signal"] == "wait"
-    assert 106.0 < bt["price"] < 123.0  # between the low and the current price
+    # no analyst coverage -> anchor on the -20%-off-52w-high deep-value zone.
+    wait = _buy_target(_bt_snap(95.0, high_52w=100.0))
+    assert wait["price"] == 80.0
+    assert wait["signal"] == "wait"
+    buy = _buy_target(_bt_snap(70.0, high_52w=100.0))
+    assert buy["signal"] == "buy"
 
 
-def test_buy_target_none_without_low():
+def test_buy_target_none_without_price_or_anchor():
     from core.scorers.composite import _buy_target
 
-    assert _buy_target({"price": 100.0}) is None
-    assert _buy_target({"price": 100.0, "week52_low": 0.0}) is None
-
-
-def test_buy_target_ignores_analyst_targets():
-    from core.scorers.composite import _buy_target
-
-    # sky-high analyst targets must not enter the calculation
-    snap = {"price": 382.0, "low_52w": 282.0, "high_52w": 495.0, "ret12": 0.33}
-    with_targets = _buy_target(_bt_snap(target_low=900.0, target_mean=1200.0, **snap))
-    without = _buy_target(_bt_snap(**snap))
-    assert with_targets["price"] == without["price"]
+    assert _buy_target({"week52_high": 100.0}) is None  # no price
+    assert _buy_target({"price": 100.0}) is None  # no target_low, no high
+    assert _buy_target({"price": 100.0, "week52_high": 0.0}) is None
 
 
 def test_recent_periods_picks_newest_of_each_type():
