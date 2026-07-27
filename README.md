@@ -58,14 +58,16 @@ Click any ticker row to open its detail view: price target bar, revenue/net inco
 ## Reading the table
 
 **Scores (0–100)** — hover any for the full breakdown:
-- **Growth** — revenue/earnings trajectory. **Quality** — profitability, balance sheet, durability. **Insiders** — conviction-weighted buy/sell activity. **Sentimiento** — FCF yield, valuation, analyst upside/conviction. **Long** — the weighted composite that drives the verdict.
+- **Growth** — revenue/earnings trajectory. **Quality** — profitability, balance sheet, durability. **Insiders** — conviction-weighted buy/sell activity. **Sentiment** — FCF yield, valuation, analyst upside/conviction. **Long** — the weighted composite that drives the verdict.
 
 **Verdict** (per Long score): Strong Buy ≥80 · Buy ≥60 · Hold ≥40 · Sell ≥20 · Strong Sell <20.
 
-**Buy Target** — is it time to buy, or wait for a dip?
-- **COMPRAR** (green) — buy at/below the shown price.
-- **CASI −X%** (amber) — almost; a small dip (≤4%) away.
-- **ESPERAR −X%** (red) — still expensive; wait for that dip.
+**Buy Target** — is it time to buy, or wait for a dip? The target is a conservative entry price: the ~10th percentile of analyst price targets (or, for names with <10 analysts, 20% off the 52-week high), discounted further for volatile names. Hover the cell for the full breakdown.
+- **BUY** (green) — the price is at/below the target.
+- **NEAR −X%** (amber) — almost; a small dip (≤4%) away.
+- **WAIT −X%** (red) — still expensive; wait for that dip.
+
+**Filters** — above the watchlist, filter rows by Action (verdict), Signal (buy/wait), and Sector. The count shows how many of the full list match.
 
 **Risk flags** (next to the verdict):
 - `REV↓` revenue shrinking · `CYCLICAL` growth is a likely cycle peak, not durable · `$$$` expensive valuation · `E-Nd` earnings in N days · `PRICE?` quote looks wrong (>50% off prior close).
