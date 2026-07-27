@@ -296,22 +296,25 @@ export function buildBuyTargetTooltip(ticker, d) {
   const sigCls = isBuy ? "s-green" : "s-red";
   const sigTxt = isBuy ? "COMPRAR" : "ESPERAR";
 
-  let body;
+  const volPct = bt.vol != null ? ` (${(bt.vol * 100).toFixed(0)}%)` : "";
+  const mosPct = (bt.mos * 100).toFixed(0);
+  const volCls = { alta: "s-red", media: "s-yellow", baja: "s-green" }[bt.vol_level] || "";
+  const volRow = `<div class="tt-sub-row"><span class="tt-sub-lbl">Volatilidad <span class="${volCls}">${bt.vol_level || "—"}</span>${volPct}</span><span class="tt-sub-val" style="margin-left:auto">${bt.mos > 0 ? `−${mosPct}%` : "sin descuento"}</span></div>`;
+
+  let head;
   if (bt.method === "p10") {
-    const volPct = bt.vol != null ? `${(bt.vol * 100).toFixed(0)}%` : "—";
-    const mosPct = `${(bt.mos * 100).toFixed(0)}%`;
-    body = `
+    head = `
       <div class="subtext" style="font-size:11px;margin-bottom:4px">Percentil 10 de ${bt.analysts} analistas</div>
       ${row("Pesimista (low) ×0.8", $(bt.low))}
       ${row("Mediana (p50) ×0.2", $(bt.p50))}
-      ${row("= Anchor p10", `<b>${$(bt.anchor)}</b>`)}
-      ${row(`Volatilidad ${volPct} → margen`, `−${mosPct}`)}`;
+      ${row("= Anchor p10", `<b>${$(bt.anchor)}</b>`)}`;
   } else {
-    body = `
+    head = `
       <div class="subtext" style="font-size:11px;margin-bottom:4px">Pocos analistas (${bt.analysts} &lt; 10) → regla del máximo</div>
       ${row("Máximo 52 semanas", $(bt.week52_high))}
-      ${row("−20%", `<b>${$(bt.price)}</b>`)}`;
+      ${row("−20% = anchor", `<b>${$(bt.anchor)}</b>`)}`;
   }
+  const body = `${head}${volRow}${row("= Target", `<b>${$(bt.price)}</b>`)}`;
 
   const cmp = price != null
     ? `Precio hoy ${$(price)} ${price <= bt.price ? "≤" : ">"} ${$(bt.price)}`

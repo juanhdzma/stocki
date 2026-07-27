@@ -118,27 +118,36 @@ def _composite_long(base: dict, price_long: dict, snapshot: dict) -> dict:
     return {"score": score, "action": _action(score), "weights": weights_pct}
 
 
-# buy_target answers: buy now, or wait for a dip to $X? The entry price is the ~10th percentile of the
-# analyst price-target distribution, interpolated between the LOW (the min, p0) and the MEDIAN (p50) —
-# a conservative, outlier-robust anchor grounded in forward fundamentals rather than a single
-# 52-week-high print (which a momentum name's bubble peak makes meaningless — real case: SNDK ran
-# 40→2354 in a year, so 80% of its high = $1888 was a nonsense "buy" above the current price). That p10
-# anchor is then discounted by a margin of safety that WIDENS with how much the name actually moves
-# (realized_vol): SNDK's ~110% vol widens its MOS to the cap, pulling the target below price (→ wait),
-# while a calm name like AAPL (~25% vol) barely moves off the raw anchor. Two things were tried and
-# dropped: an analyst-count weighting (arbitrary pivot; the percentile encodes conservatism directly)
-# and a momentum widener (double-counts with vol on exactly the bubble names — bt_lab).
-# The percentile is only trusted with ≥_BT_MIN_ANALYSTS covering it — a low/median built from a
-# handful of analysts is too thin to shape a distribution. NOT return-validated (analyst targets
-# aren't in a price-only backtest) — behavior-tuned; the knobs below are hand-picked. Fallback for
-# thin/absent coverage (~23% of names): the −20%-off-52w-high zone, an out-of-sample-validated
-# mean-reversion entry (entry_lab.py: ≥20% off the high beat all else ~+11pp/6m).
+# buy_target answers: buy now, or wait for a dip to $X? Two anchors, one shared volatility discount.
+# Anchor: with ≥_BT_MIN_ANALYSTS covering it, the ~10th percentile of the analyst price-target
+# distribution (interpolated LOW→MEDIAN) — a conservative, outlier-robust level grounded in forward
+# fundamentals rather than a single 52-week-high print (which a momentum name's bubble peak makes
+# meaningless — SNDK ran 40→2354 in a year, so 80% of its high = $1888 was a nonsense "buy" above the
+# current price). With thin/absent coverage (~23% of names) it falls back to the −20%-off-52w-high
+# zone, an out-of-sample-validated mean-reversion entry (entry_lab.py: ≥20% off the high beat all else
+# ~+11pp/6m). Either anchor is then discounted by a margin of safety keyed to how much the name moves
+# (realized_vol), in three discrete tiers — low/mid/high vol → 0/12/25% extra discount. A calm name
+# (AAPL ~25%) buys at the raw anchor; a wild one (SNDK ~110%) needs a 25%-deeper entry. Tried and
+# dropped: an analyst-count weighting (arbitrary; the percentile encodes conservatism directly) and a
+# momentum widener (double-counts with vol on the bubble names — bt_lab). NOT return-validated (analyst
+# targets aren't in a price-only backtest) — behavior-tuned; the knobs below are hand-picked.
 _BUY_TARGET_DEEP_DD = -0.20  # fallback drawdown from the 52w high when analyst targets aren't trusted
 _BT_MIN_ANALYSTS = 10  # below this, the target distribution is too thin to build a percentile from
 _BT_PERCENTILE = 0.10  # target the ~p10 of the analyst distribution: low + (p/0.5)*(median − low)
-_BT_VOL_PIVOT = 0.35  # realized vol above which the margin of safety starts widening
-_BT_VOL_SLOPE = 0.6
-_BT_VOL_MOS_MAX = 0.25
+_BT_VOL_MID = 0.40  # realized vol ≥ this → "media" tier; below → "baja"
+_BT_VOL_HIGH = 0.75  # realized vol ≥ this → "alta" tier
+_BT_VOL_MOS = {"baja": 0.0, "media": 0.12, "alta": 0.25}  # extra margin of safety per volatility tier
+
+
+def _vol_tier(vol: float | None) -> tuple[str, float]:
+    """Discrete volatility level + its margin-of-safety discount. Unknown vol → no discount."""
+    if vol is None:
+        return "baja", 0.0
+    if vol >= _BT_VOL_HIGH:
+        return "alta", _BT_VOL_MOS["alta"]
+    if vol >= _BT_VOL_MID:
+        return "media", _BT_VOL_MOS["media"]
+    return "baja", _BT_VOL_MOS["baja"]
 
 
 def _buy_target(snapshot: dict) -> dict | None:
@@ -146,34 +155,29 @@ def _buy_target(snapshot: dict) -> dict | None:
     if not price:
         return None
 
+    vol = snapshot.get("realized_vol")
+    vol_level, mos = _vol_tier(vol)
+
     low = snapshot.get("target_low")
     p50 = snapshot.get("target_median") or snapshot.get("target_mean")  # true p50, mean as a fallback
     nac = int(snapshot.get("analyst_count") or 0)
     if nac >= _BT_MIN_ANALYSTS and low and low > 0 and p50 and p50 > 0:
         anchor = low + (_BT_PERCENTILE / 0.5) * (p50 - low)  # interpolate the low percentile p0→p50
-        vol = snapshot.get("realized_vol")
-        mos = clamp((vol - _BT_VOL_PIVOT) * _BT_VOL_SLOPE, 0.0, _BT_VOL_MOS_MAX) if vol else 0.0
-        target = anchor * (1 - mos)
-        detail = {
-            "method": "p10",
-            "analysts": nac,
-            "low": round(low, 2),
-            "p50": round(p50, 2),
-            "anchor": round(anchor, 2),
-            "vol": round(vol, 4) if vol else None,
-            "mos": round(mos, 4),
-        }
+        detail = {"method": "p10", "analysts": nac, "low": round(low, 2), "p50": round(p50, 2)}
     else:
         w52h = snapshot.get("week52_high")
         if not w52h or w52h <= 0:
             return None
-        target = w52h * (1 + _BUY_TARGET_DEEP_DD)
-        detail = {
-            "method": "drawdown",
-            "analysts": nac,
-            "week52_high": round(w52h, 2),
-            "dd": _BUY_TARGET_DEEP_DD,
-        }
+        anchor = w52h * (1 + _BUY_TARGET_DEEP_DD)
+        detail = {"method": "drawdown", "analysts": nac, "week52_high": round(w52h, 2), "dd": _BUY_TARGET_DEEP_DD}
+
+    target = anchor * (1 - mos)  # same volatility discount on either anchor
+    detail.update({
+        "anchor": round(anchor, 2),
+        "vol": round(vol, 4) if vol else None,
+        "vol_level": vol_level,
+        "mos": round(mos, 4),
+    })
 
     return {
         "price": round(target, 2),

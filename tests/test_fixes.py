@@ -1162,22 +1162,18 @@ def _bt_snap(price, high_52w, ret6=None, **extra):
     return snap
 
 
-def test_buy_target_p10_anchor_widened_by_vol():
+def test_buy_target_p10_anchor_widened_by_vol_tiers():
     from core.scorers.composite import _buy_target
 
-    # p10 = low + (0.10/0.5)*(median - low) = 100 + 0.2*(200-100) = 120.
-    calm = _bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0,
-                    analyst_count=15, realized_vol=0.35)
-    bt = _buy_target(calm)
-    assert bt["price"] == 120.0
-    assert bt["signal"] == "buy"
+    # p10 anchor = low + (0.10/0.5)*(median - low) = 100 + 0.2*(200-100) = 120.
+    def bt(vol):
+        return _buy_target(_bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0,
+                                    analyst_count=15, realized_vol=vol))
 
-    # same name but wild (vol 1.10) -> MOS caps at 0.25 -> 120*0.75 = 90 -> now a wait.
-    wild = _bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0,
-                    analyst_count=15, realized_vol=1.10)
-    bt = _buy_target(wild)
-    assert bt["price"] == 90.0
-    assert bt["signal"] == "wait"
+    assert bt(0.30)["vol_level"] == "baja" and bt(0.30)["price"] == 120.0   # no discount
+    assert bt(0.50)["vol_level"] == "media" and bt(0.50)["price"] == 105.6  # 120*0.88
+    assert bt(0.90)["vol_level"] == "alta" and bt(0.90)["price"] == 90.0    # 120*0.75
+    assert bt(0.30)["signal"] == "buy" and bt(0.90)["signal"] == "wait"
 
 
 def test_buy_target_p50_falls_back_to_mean_without_median():
@@ -1194,9 +1190,21 @@ def test_buy_target_thin_coverage_falls_back_to_drawdown():
 
     # rich targets but <10 analysts -> distribution too thin -> ignore it, use the drawdown zone.
     bt = _buy_target(_bt_snap(95.0, high_52w=100.0, target_low=100.0, target_median=200.0,
-                              analyst_count=5, realized_vol=0.35))
+                              analyst_count=5, realized_vol=0.30))
+    assert bt["method"] == "drawdown"
     assert bt["price"] == 80.0  # w52*0.80, not the p10 anchor
     assert bt["signal"] == "wait"
+
+
+def test_buy_target_drawdown_widened_by_vol_tier():
+    from core.scorers.composite import _buy_target
+
+    # the volatility discount applies to the drawdown fallback too: high vol -> deeper entry.
+    # anchor = w52*0.80 = 80; alta tier -> 80*0.75 = 60.
+    bt = _buy_target(_bt_snap(70.0, high_52w=100.0, analyst_count=3, realized_vol=0.90))
+    assert bt["method"] == "drawdown" and bt["vol_level"] == "alta"
+    assert bt["price"] == 60.0
+    assert bt["signal"] == "wait"  # price 70 > 60
 
 
 def test_buy_target_falls_back_to_drawdown_without_analyst_targets():
