@@ -1162,35 +1162,19 @@ def _bt_snap(price, high_52w, ret6=None, **extra):
     return snap
 
 
-def test_buy_target_below_analyst_low_is_buy():
-    from core.scorers.composite import _buy_target
-
-    # at/below the most bearish analyst target -> margin of safety -> buy now.
-    bt = _buy_target(_bt_snap(90.0, high_52w=200.0, target_low=100.0))
-    assert bt["signal"] == "buy"
-    assert bt["price"] == 100.0
-
-
-def test_buy_target_above_analyst_low_waits():
-    from core.scorers.composite import _buy_target
-
-    # above even the bearish analyst -> wait down toward that floor (target_low < price).
-    bt = _buy_target(_bt_snap(120.0, high_52w=200.0, target_low=100.0))
-    assert bt["signal"] == "wait"
-    assert bt["price"] == 100.0
-
-
 def test_buy_target_p10_anchor_widened_by_vol():
     from core.scorers.composite import _buy_target
 
     # p10 = low + (0.10/0.5)*(median - low) = 100 + 0.2*(200-100) = 120.
-    calm = _bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0, realized_vol=0.35)
+    calm = _bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0,
+                    analyst_count=15, realized_vol=0.35)
     bt = _buy_target(calm)
     assert bt["price"] == 120.0
     assert bt["signal"] == "buy"
 
     # same name but wild (vol 1.10) -> MOS caps at 0.25 -> 120*0.75 = 90 -> now a wait.
-    wild = _bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0, realized_vol=1.10)
+    wild = _bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0,
+                    analyst_count=15, realized_vol=1.10)
     bt = _buy_target(wild)
     assert bt["price"] == 90.0
     assert bt["signal"] == "wait"
@@ -1200,8 +1184,19 @@ def test_buy_target_p50_falls_back_to_mean_without_median():
     from core.scorers.composite import _buy_target
 
     # no median -> mean stands in as p50: 100 + 0.2*(200-100) = 120.
-    bt = _buy_target(_bt_snap(105.0, high_52w=300.0, target_low=100.0, target_mean=200.0))
+    bt = _buy_target(_bt_snap(105.0, high_52w=300.0, target_low=100.0, target_mean=200.0,
+                              analyst_count=15))
     assert bt["price"] == 120.0
+
+
+def test_buy_target_thin_coverage_falls_back_to_drawdown():
+    from core.scorers.composite import _buy_target
+
+    # rich targets but <10 analysts -> distribution too thin -> ignore it, use the drawdown zone.
+    bt = _buy_target(_bt_snap(95.0, high_52w=100.0, target_low=100.0, target_median=200.0,
+                              analyst_count=5, realized_vol=0.35))
+    assert bt["price"] == 80.0  # w52*0.80, not the p10 anchor
+    assert bt["signal"] == "wait"
 
 
 def test_buy_target_falls_back_to_drawdown_without_analyst_targets():

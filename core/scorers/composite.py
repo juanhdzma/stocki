@@ -128,10 +128,13 @@ def _composite_long(base: dict, price_long: dict, snapshot: dict) -> dict:
 # while a calm name like AAPL (~25% vol) barely moves off the raw anchor. Two things were tried and
 # dropped: an analyst-count weighting (arbitrary pivot; the percentile encodes conservatism directly)
 # and a momentum widener (double-counts with vol on exactly the bubble names — bt_lab).
-# NOT return-validated (analyst targets aren't in a price-only backtest) — behavior-tuned; the knobs
-# below are hand-picked. Fallback for the ~1% with no analyst coverage: the −20%-off-52w-high zone, an
-# out-of-sample-validated mean-reversion entry (entry_lab.py: ≥20% off the high beat all else ~+11pp/6m).
-_BUY_TARGET_DEEP_DD = -0.20  # fallback drawdown from the 52w high when analyst targets are absent
+# The percentile is only trusted with ≥_BT_MIN_ANALYSTS covering it — a low/median built from a
+# handful of analysts is too thin to shape a distribution. NOT return-validated (analyst targets
+# aren't in a price-only backtest) — behavior-tuned; the knobs below are hand-picked. Fallback for
+# thin/absent coverage (~23% of names): the −20%-off-52w-high zone, an out-of-sample-validated
+# mean-reversion entry (entry_lab.py: ≥20% off the high beat all else ~+11pp/6m).
+_BUY_TARGET_DEEP_DD = -0.20  # fallback drawdown from the 52w high when analyst targets aren't trusted
+_BT_MIN_ANALYSTS = 10  # below this, the target distribution is too thin to build a percentile from
 _BT_PERCENTILE = 0.10  # target the ~p10 of the analyst distribution: low + (p/0.5)*(median − low)
 _BT_VOL_PIVOT = 0.35  # realized vol above which the margin of safety starts widening
 _BT_VOL_SLOPE = 0.6
@@ -145,13 +148,12 @@ def _buy_target(snapshot: dict) -> dict | None:
 
     low = snapshot.get("target_low")
     p50 = snapshot.get("target_median") or snapshot.get("target_mean")  # true p50, mean as a fallback
-    if low and low > 0 and p50 and p50 > 0:
+    nac = snapshot.get("analyst_count") or 0
+    if nac >= _BT_MIN_ANALYSTS and low and low > 0 and p50 and p50 > 0:
         anchor = low + (_BT_PERCENTILE / 0.5) * (p50 - low)  # interpolate the low percentile p0→p50
         vol = snapshot.get("realized_vol")
         mos = clamp((vol - _BT_VOL_PIVOT) * _BT_VOL_SLOPE, 0.0, _BT_VOL_MOS_MAX) if vol else 0.0
         target = anchor * (1 - mos)
-    elif low and low > 0:
-        target = low
     else:
         w52h = snapshot.get("week52_high")
         if not w52h or w52h <= 0:
