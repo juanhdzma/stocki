@@ -176,6 +176,8 @@ def _buy_target(snapshot: dict) -> dict | None:
         "anchor": round(anchor, 2),
         "vol": round(vol, 4) if vol else None,
         "vol_level": vol_level,
+        "vol_mid": _BT_VOL_MID,
+        "vol_high": _BT_VOL_HIGH,
         "mos": round(mos, 4),
     })
 

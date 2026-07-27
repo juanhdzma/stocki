@@ -301,6 +301,12 @@ export function buildBuyTargetTooltip(ticker, d) {
   const volCls = { alta: "s-red", media: "s-yellow", baja: "s-green" }[bt.vol_level] || "";
   const volRow = `<div class="tt-sub-row"><span class="tt-sub-lbl">Volatilidad <span class="${volCls}">${bt.vol_level || "—"}</span>${volPct}</span><span class="tt-sub-val" style="margin-left:auto">${bt.mos > 0 ? `−${mosPct}%` : "sin descuento"}</span></div>`;
 
+  const vm = (bt.vol_mid * 100).toFixed(0), vh = (bt.vol_high * 100).toFixed(0);
+  const bands = [["baja", `<${vm}%`, "0%"], ["media", `${vm}–${vh}%`, "−12%"], ["alta", `≥${vh}%`, "−25%"]];
+  const legend = `<div class="subtext" style="font-size:10px;display:flex;gap:8px;margin-top:3px">${
+    bands.map(([lvl, rng, m]) => `<span${lvl === bt.vol_level ? ` class="${volCls}" style="font-weight:600"` : ""}>${lvl} ${rng} ${m}</span>`).join("")
+  }</div>`;
+
   let head;
   if (bt.method === "p10") {
     head = `
@@ -314,7 +320,7 @@ export function buildBuyTargetTooltip(ticker, d) {
       ${row("Máximo 52 semanas", $(bt.week52_high))}
       ${row("−20% = anchor", `<b>${$(bt.anchor)}</b>`)}`;
   }
-  const body = `${head}${volRow}${row("= Target", `<b>${$(bt.price)}</b>`)}`;
+  const body = `${head}${volRow}${legend}${row("= Target", `<b>${$(bt.price)}</b>`)}`;
 
   const cmp = price != null
     ? `Precio hoy ${$(price)} ${price <= bt.price ? "≤" : ">"} ${$(bt.price)}`
