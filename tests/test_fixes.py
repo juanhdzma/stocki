@@ -1179,9 +1179,9 @@ def test_buy_target_p10_anchor_widened_by_vol_tiers():
 def test_buy_target_p50_falls_back_to_mean_without_median():
     from core.scorers.composite import _buy_target
 
-    # no median -> mean stands in as p50: 100 + 0.2*(200-100) = 120.
+    # no median -> mean stands in as p50: 100 + 0.2*(200-100) = 120 (baja vol -> no discount).
     bt = _buy_target(_bt_snap(105.0, high_52w=300.0, target_low=100.0, target_mean=200.0,
-                              analyst_count=15))
+                              analyst_count=15, realized_vol=0.30))
     assert bt["price"] == 120.0
 
 
@@ -1210,12 +1210,23 @@ def test_buy_target_drawdown_widened_by_vol_tier():
 def test_buy_target_falls_back_to_drawdown_without_analyst_targets():
     from core.scorers.composite import _buy_target
 
-    # no analyst coverage -> anchor on the -20%-off-52w-high deep-value zone.
-    wait = _buy_target(_bt_snap(95.0, high_52w=100.0))
+    # no analyst coverage -> anchor on the -20%-off-52w-high deep-value zone (baja vol -> no discount).
+    wait = _buy_target(_bt_snap(95.0, high_52w=100.0, realized_vol=0.30))
     assert wait["price"] == 80.0
     assert wait["signal"] == "wait"
-    buy = _buy_target(_bt_snap(70.0, high_52w=100.0))
+    buy = _buy_target(_bt_snap(70.0, high_52w=100.0, realized_vol=0.30))
     assert buy["signal"] == "buy"
+
+
+def test_buy_target_unmeasurable_vol_is_conservative_not_low():
+    from core.scorers.composite import _buy_target
+
+    # too little history to measure vol -> "n/d", not "baja": apply the full (alta) discount.
+    # drawdown anchor 80 * (1 - 0.25) = 60, not 80.
+    bt = _buy_target(_bt_snap(95.0, high_52w=100.0, realized_vol=None))
+    assert bt["vol_level"] == "n/d"
+    assert bt["mos"] == 0.25
+    assert bt["price"] == 60.0
 
 
 def test_buy_target_none_without_price_or_anchor():

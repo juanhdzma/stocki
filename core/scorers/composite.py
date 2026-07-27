@@ -141,9 +141,10 @@ _BT_VOL_MOS = {"baja": 0.0, "media": 0.12, "alta": 0.25}  # extra margin of safe
 
 
 def _vol_tier(vol: float | None) -> tuple[str, float]:
-    """Discrete volatility level + its margin-of-safety discount. Unknown vol → no discount."""
+    """Discrete volatility level + its margin-of-safety discount. Unmeasurable vol (too little price
+    history — a freshly-listed name) is NOT low vol: assume high risk and demand the full discount."""
     if vol is None:
-        return "baja", 0.0
+        return "n/d", _BT_VOL_MOS["alta"]
     if vol >= _BT_VOL_HIGH:
         return "alta", _BT_VOL_MOS["alta"]
     if vol >= _BT_VOL_MID:

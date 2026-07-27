@@ -256,6 +256,8 @@ def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str,
 
 
 _VOL_WINDOWS = {"1m": 21, "6m": 126, "12m": 252}  # trading days per horizon
+_VOL_MIN_OBS = 20  # min closes for a trustworthy annualized stdev: below ~1 month, sqrt(252) on a
+# tiny sample amplifies noise into absurd numbers (SKHY, 12 days → 183%), so return None → "n/d" tier
 
 
 def _compute_realized_vol(ticker: str, hist: pd.DataFrame | None = None) -> dict[str, float] | None:
@@ -280,12 +282,12 @@ def _compute_realized_vol(ticker: str, hist: pd.DataFrame | None = None) -> dict
             closes = closes.dropna()
 
         c = closes.to_numpy()
-        if len(c) < 16:
+        if len(c) < _VOL_MIN_OBS:
             return None
         out = {}
         for name, w in _VOL_WINDOWS.items():
             seg = c[-w:]
-            if len(seg) < 16:  # need ~15 daily returns for a meaningful stdev
+            if len(seg) < _VOL_MIN_OBS:
                 continue
             rets = np.diff(seg) / seg[:-1]
             out[name] = float(np.std(rets) * np.sqrt(252))

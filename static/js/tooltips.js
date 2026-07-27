@@ -298,14 +298,14 @@ export function buildBuyTargetTooltip(ticker, d) {
 
   const volPct = bt.vol != null ? ` prom ${(bt.vol * 100).toFixed(0)}%` : "";
   const mosPct = (bt.mos * 100).toFixed(0);
-  const volCls = { alta: "s-red", media: "s-yellow", baja: "s-green" }[bt.vol_level] || "";
+  const volCls = { alta: "s-red", media: "s-yellow", baja: "s-green", "n/d": "s-red" }[bt.vol_level] || "";
   const volRow = `<div class="tt-sub-row"><span class="tt-sub-lbl">Volatilidad <span class="${volCls}">${bt.vol_level || "—"}</span>${volPct}</span><span class="tt-sub-val" style="margin-left:auto">${bt.mos > 0 ? `−${mosPct}%` : "sin descuento"}</span></div>`;
 
   const vw = bt.vol_windows || {};
   const wins = ["1m", "6m", "12m"].filter(k => vw[k] != null);
   const winRow = wins.length
     ? `<div class="subtext" style="font-size:10px;margin-top:2px">${wins.map(k => `${k} ${(vw[k] * 100).toFixed(0)}%`).join(" · ")} → prom ${(bt.vol * 100).toFixed(0)}%</div>`
-    : "";
+    : (bt.vol == null ? `<div class="subtext" style="font-size:10px;margin-top:2px">historia &lt; 1 mes → sin medir, margen conservador</div>` : "");
 
   const vm = (bt.vol_mid * 100).toFixed(0), vh = (bt.vol_high * 100).toFixed(0);
   const bands = [["baja", `<${vm}%`, "0%"], ["media", `${vm}–${vh}%`, "−12%"], ["alta", `≥${vh}%`, "−25%"]];
