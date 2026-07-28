@@ -1,7 +1,7 @@
 export const state = {
   watchlist: [], watchlistData: {}, tickerStatus: {},
   portfolio: [], portfolioHoldings: {}, portfolioData: {},
-  editingTicker: null, lastDetail: null, market: null,
+  editingTicker: null, lastDetail: null, market: null, homeLoadedAt: null,
   priceHistoryCache: {}, chartRegistry: {},
   pfSortCol: sessionStorage.getItem("pfSortCol") ?? "total",
   pfSortDir: Number(sessionStorage.getItem("pfSortDir") ?? -1),

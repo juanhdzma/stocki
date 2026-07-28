@@ -8,6 +8,8 @@ import time
 import yfinance
 from fastapi import APIRouter
 
+from util import utcnow_iso
+
 log = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -61,6 +63,7 @@ async def market():
         if cached is not None and now - cached[1] <= _TTL:
             return cached[0]
     data = await asyncio.to_thread(_fetch_all)
+    data["fetched_at"] = utcnow_iso()
     with _cache_lock:
         _cache["data"] = (data, now)
     return data

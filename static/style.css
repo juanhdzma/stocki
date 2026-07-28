@@ -924,3 +924,9 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   color: var(--subtext);
   margin-top: 6px;
 }
+.mkt-updated {
+  font-size: 9px;
+  color: var(--subtext);
+  opacity: 0.75;
+  margin-top: 6px;
+}

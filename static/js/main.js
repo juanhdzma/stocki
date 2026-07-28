@@ -105,7 +105,7 @@ function renderHomeSections() {
     return;
   }
 
-  let html = renderMarketBar(state.market, state.watchlistData);
+  let html = renderMarketBar(state.market, state.watchlistData, state.homeLoadedAt);
 
   if (state.portfolio.length) {
     const pfTotal = state.portfolio.reduce((sum, t) => {
@@ -178,6 +178,7 @@ async function showHome() {
     const { _running, ...pfPrices } = pfRaw;
     state.portfolioData = pfPrices;
     if (mkRes && mkRes.ok) state.market = await mkRes.json();
+    state.homeLoadedAt = new Date().toISOString();
   } catch (e) {
     console.error("Home load failed:", e);
   }
