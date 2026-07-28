@@ -704,6 +704,55 @@ def test_composite_long_dip_bonus_rewards_quality_selloff():
     assert big_dip["score"] > no_dip["score"]
 
 
+# ── REV↓: trend-gated, not single-quarter-YoY ───────────────────────────────────
+
+
+def _q(rev):
+    return {"type": "quarterly", "revenue": rev}
+
+
+def test_revenue_shrinking_ignores_one_off_base_quarter():
+    """QBTS case: a one-off 15M system-sale quarter in the base period makes the point YoY read
+    -81%, but the trailing four quarters are flat ~3M — the business isn't shrinking."""
+    from core.scorers.composite import _revenue_shrinking
+
+    # newest-first, mirroring read_all_fundamentals ordering
+    fundamentals = [_q(2_858_000), _q(2_752_000), _q(3_739_000), _q(3_095_000), _q(15_001_000)]
+    assert _revenue_shrinking(fundamentals) is False
+
+
+def test_revenue_shrinking_flags_sustained_decline():
+    """SMR case: revenue genuinely collapsing quarter over quarter — must still flag."""
+    from core.scorers.composite import _revenue_shrinking
+
+    fundamentals = [_q(565_000), _q(1_808_000), _q(8_242_000), _q(8_054_000), _q(13_375_000)]
+    assert _revenue_shrinking(fundamentals) is True
+
+
+def test_revenue_shrinking_thin_history_never_flags():
+    """With <4 quarters the trend can't be measured — a lumpy-revenue name (QNT: 19M→5M a year
+    apart) is left unflagged rather than warned off a noisy single-quarter YoY."""
+    from core.scorers.composite import _revenue_shrinking
+
+    assert _revenue_shrinking([_q(5_237_000), _q(19_085_000)]) is False
+    assert _revenue_shrinking([]) is False
+
+
+def test_composite_long_one_off_base_no_longer_caps_below_strong_buy():
+    """The flat-trend name (QBTS-like) should not be capped at 79.9 just because its point YoY is
+    negative against a one-off base quarter."""
+    from core.scorers.composite import _composite_long
+
+    base = {
+        "fundamental_momentum": _mk(95),
+        "value_quality": _mk(95),
+        "insider_conviction": _mk(50),
+    }
+    flat = [_q(2_858_000), _q(2_752_000), _q(3_739_000), _q(3_095_000), _q(15_001_000)]
+    result = _composite_long(base, _mk(50), {"revenue_growth": -0.809}, flat)
+    assert result["action"] == "STRONG-BUY"
+
+
 def test_composite_long_dip_bonus_does_not_rescue_bad_business():
     """A big drop in a weak business is a falling knife, not a buy signal — the dip
     bonus alone must not be enough to pull a bad business out of SELL territory."""
@@ -1060,7 +1109,8 @@ def test_composite_long_caps_below_strong_buy_when_revenue_declining():
         "value_quality": _mk(98),
         "insider_conviction": _mk(50),
     }
-    result = _composite_long(base, _mk(90), {"revenue_growth": -0.035})
+    declining = [_q(70), _q(85), _q(100), _q(115)]  # newest-first, trending down
+    result = _composite_long(base, _mk(90), {"revenue_growth": -0.035}, declining)
     assert result["score"] <= 79.9
     assert result["action"] != "STRONG-BUY", (
         "trailing quality alone shouldn't reach STRONG-BUY with shrinking revenue"
@@ -1298,7 +1348,8 @@ def test_insider_no_valid_trades_is_none_not_50():
 def test_risk_flags_revenue_decline_and_price_suspect():
     from core.scorers.composite import _risk_flags
 
-    flags = _risk_flags([], {"revenue_growth": -0.04, "price_suspect": True})
+    declining = [_q(70), _q(85), _q(100), _q(115)]  # newest-first, trending down
+    flags = _risk_flags(declining, {"revenue_growth": -0.04, "price_suspect": True})
     keys = {f["key"] for f in flags}
     assert "rev" in keys and "price" in keys
 

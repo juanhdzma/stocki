@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from core.insider_score import compute_insider_score, normalize
 
-from .base import all_annual, clamp
+from .base import all_annual, clamp, latest_quarters, slope_normalized
 from .fundamental_momentum import score as fm_score
 from .price_long import score as pl_score
 from .value_quality import score as vq_score
@@ -91,7 +91,30 @@ def _dip_bonus(snapshot: dict) -> float:
     return round(clamp(effective_drop / beta / _DIP_REF_DROP, 0, 1) * _DIP_BONUS_MAX, 1)
 
 
-def _composite_long(base: dict, price_long: dict, snapshot: dict) -> dict:
+# -0.10 is the same "revenue shrinking" reference the Growth score's revenue_trend uses.
+_REV_SHRINK_SLOPE = -0.10
+
+
+def _revenue_shrinking(fundamentals: list[dict]) -> bool:
+    """Is revenue genuinely trending down — not just optically down on a single-quarter YoY that
+    compares against a one-off spike in the base period? snapshot["revenue_growth"] (yfinance MRQ
+    YoY) reads -81% for a name whose last four quarters are flat because the year-ago quarter had a
+    one-off (a lumpy system sale, a cycle-high mining reward). So gate on the slope over the last
+    ~year of quarters, which excludes a stale base-period spike, instead of the point YoY. With <4
+    quarters of history a trend can't be measured — and the single-quarter YoY it would fall back to
+    is exactly the noisy signal this gate exists to distrust, worst on the lumpy-revenue names (fresh
+    spinoffs, quantum/biotech contract revenue) that have thin history — so a thin-history name is
+    left unflagged rather than warned off a number we don't trust."""
+    quarters = latest_quarters(fundamentals, 8)
+    rev = list(reversed([q["revenue"] for q in quarters if q.get("revenue") is not None]))
+    if len(rev) < 4:
+        return False
+    return slope_normalized(rev[-4:]) < _REV_SHRINK_SLOPE
+
+
+def _composite_long(
+    base: dict, price_long: dict, snapshot: dict, fundamentals: list[dict] | None = None
+) -> dict:
     # Long ranks businesses by quality (fm/vq/insiders) first — price and recent dips are
     # bounded modifiers on top, never enough to let a mediocre "statistically cheap" business
     # (often driven by optimistic analyst targets) outrank a genuinely better one. A cheap
@@ -111,8 +134,7 @@ def _composite_long(base: dict, price_long: dict, snapshot: dict) -> dict:
     # Trailing profitability/balance-sheet strength describes where a business has been,
     # not where it's going — a business with genuinely shrinking revenue shouldn't reach
     # STRONG-BUY on quality alone, no matter how clean its margins or balance sheet are.
-    rev_g = snapshot.get("revenue_growth")
-    if rev_g is not None and rev_g < 0:
+    if _revenue_shrinking(fundamentals or []):
         score = min(score, 79.9)
 
     return {"score": score, "action": _action(score), "weights": weights_pct}
@@ -390,12 +412,13 @@ def _risk_flags(
 ) -> list[dict]:
     flags: list[dict] = []
     rev_g = snapshot.get("revenue_growth")
-    if rev_g is not None and rev_g < 0:
+    if _revenue_shrinking(fundamentals):
+        yoy = f" ({rev_g:+.0%} YoY)" if rev_g is not None else ""
         flags.append(
             {
                 "key": "rev",
                 "label": "REV↓",
-                "title": f"Revenue shrinking ({rev_g:+.0%} YoY) — score capped below STRONG-BUY",
+                "title": f"Revenue trending down{yoy} — score capped below STRONG-BUY",
             }
         )
 
@@ -451,7 +474,7 @@ def compute_all(fundamentals: list[dict], snapshot: dict, as_of: datetime | None
     return {
         **base,
         "price_long": price_long,
-        "composite_long": _composite_long(base, price_long, snapshot),
+        "composite_long": _composite_long(base, price_long, snapshot, fundamentals),
         "buy_target": _buy_target(snapshot),
         "flags": _risk_flags(fundamentals, snapshot, as_of),
     }
