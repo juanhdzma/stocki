@@ -239,8 +239,15 @@ def _compute_returns(ticker: str, hist: pd.DataFrame | None = None) -> dict[str,
                         closes[sym].dropna() if sym in closes.columns else pd.Series(dtype=float)
                     )
                     if len(series) > days:
-                        r = (series.iloc[-1] - series.iloc[-days]) / series.iloc[-days]
-                        result[key] = float(r)
+                        base = series.iloc[-days]
+                        result[key] = float((series.iloc[-1] - base) / base) if base else None
+                    elif label == "1m" and len(series) >= 2:
+                        # A name younger than a month (fresh IPO/spinoff) has no 21-day-ago price:
+                        # show the return since its first close ("1M or however long it's traded")
+                        # instead of a blank. Only 1m falls back — 12m stays None so the NEW flag,
+                        # which keys off ticker_return_12m is None, still fires for sub-year names.
+                        base = series.iloc[0]
+                        result[key] = float((series.iloc[-1] - base) / base) if base else None
                     else:
                         result[key] = None
                 except Exception:
