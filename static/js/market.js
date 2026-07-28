@@ -4,10 +4,10 @@
 function chip(chg) {
   if (chg == null) return "";
   const cls = chg >= 0 ? "s-green" : "s-red";
-  return `<span class="mkt-chg ${cls}">${chg >= 0 ? "+" : ""}${(chg * 100).toFixed(2)}%</span>`;
+  return `<span class="mkt-chg ${cls}">${chg >= 0 ? "+" : ""}${(chg * 100).toFixed(2)}%<span class="mkt-chg-lbl">1d</span></span>`;
 }
 
-function rangeCard(label, d, { fmt, vixBands = false, lowLbl, highLbl }) {
+function rangeCard(label, d, { fmt, vixBands = false, lowLbl, highLbl, title = "" }) {
   if (!d || d.value == null) {
     return `<div class="mkt-card"><div class="mkt-card-top"><span class="mkt-label">${label}</span></div><div class="mkt-value">—</div></div>`;
   }
@@ -24,16 +24,17 @@ function rangeCard(label, d, { fmt, vixBands = false, lowLbl, highLbl }) {
   }
   const lo = lowLbl ?? (d.low52 != null ? fmt(d.low52) : "—");
   const hi = highLbl ?? (d.high52 != null ? fmt(d.high52) : "—");
-  return `<div class="mkt-card">
+  const tag = vixBands ? "" : `<span class="mkt-range-tag">52w</span>`;
+  return `<div class="mkt-card"${title ? ` title="${title}"` : ""}>
     <div class="mkt-card-top"><span class="mkt-label">${label}</span>${chip(d.change)}</div>
     <div class="mkt-value ${valCls}">${fmt(v)}</div>
     <div class="mkt-range"><div class="mkt-track ${trackCls}"></div><div class="mkt-marker" style="left:${pos.toFixed(1)}%"></div></div>
-    <div class="mkt-range-lbls"><span>${lo}</span><span>${hi}</span></div>
+    <div class="mkt-range-lbls"><span>${lo}</span>${tag}<span>${hi}</span></div>
   </div>`;
 }
 
-function statCard(label, big, sub, bigCls = "") {
-  return `<div class="mkt-card mkt-card-stat">
+function statCard(label, big, sub, bigCls = "", title = "") {
+  return `<div class="mkt-card mkt-card-stat"${title ? ` title="${title}"` : ""}>
     <div class="mkt-card-top"><span class="mkt-label">${label}</span></div>
     <div class="mkt-value ${bigCls}">${big}</div>
     <div class="mkt-stat-sub">${sub}</div>
@@ -41,32 +42,39 @@ function statCard(label, big, sub, bigCls = "") {
 }
 
 function oppCard(wd) {
-  let buys = 0, entries = 0;
+  let buys = 0;
+  const sectors = new Set();
   for (const t in (wd || {})) {
-    const s = wd[t]?.scores;
-    if (!s) continue;
-    const a = s.composite_long?.action;
-    if (a === "BUY" || a === "STRONG-BUY") buys++;
-    if (s.buy_target?.signal === "buy") entries++;
+    const d = wd[t];
+    const a = d?.scores?.composite_long?.action;
+    if (a === "BUY" || a === "STRONG-BUY") {
+      buys++;
+      if (d?.snapshot?.sector) sectors.add(d.snapshot.sector);
+    }
   }
-  return statCard("Opportunities", buys, `BUY verdict · ${entries} at entry price`, buys ? "s-green" : "");
+  const sub = buys ? `across ${sectors.size} sector${sectors.size === 1 ? "" : "s"}` : "none right now";
+  return statCard("Opportunities", buys, sub, buys ? "s-green" : "",
+    "Names with a BUY or STRONG-BUY verdict, and how many distinct sectors they span");
 }
 
 function pulseCard(wd) {
   const chgs = Object.values(wd || {}).map(d => d?.snapshot?.day_change_pct).filter(v => v != null);
   if (!chgs.length) return statCard("Pulse", "—", "no data today");
   const avg = chgs.reduce((a, b) => a + b, 0) / chgs.length;  // day_change_pct is already in percent
-  return statCard("Pulse", `${avg >= 0 ? "+" : ""}${avg.toFixed(2)}%`, `avg across ${chgs.length} names today`, avg >= 0 ? "s-green" : "s-red");
+  return statCard("Pulse", `${avg >= 0 ? "+" : ""}${avg.toFixed(2)}%`, `avg 1d move of ${chgs.length} names`,
+    avg >= 0 ? "s-green" : "s-red", "Average daily price change across your watchlist — the pulse of your list today");
 }
 
 export function renderMarketBar(market, watchlistData) {
   const m = market || {};
   const num = v => Math.round(v).toLocaleString("en-US");
+  const rangeTitle = "Current level, its 1-day change, and where it sits in its 52-week low→high range";
   const cards = [
-    rangeCard("VIX", m.vix, { fmt: v => v.toFixed(1), vixBands: true, lowLbl: "calm", highLbl: "fear" }),
-    rangeCard("S&P 500", m.sp500, { fmt: num }),
-    rangeCard("Nasdaq 100", m.nasdaq, { fmt: num }),
-    rangeCard("10Y Yield", m.tnx, { fmt: v => `${v.toFixed(2)}%` }),
+    rangeCard("VIX", m.vix, { fmt: v => v.toFixed(1), vixBands: true, lowLbl: "calm", highLbl: "fear",
+      title: "Market fear gauge — expected volatility. Higher = more fear. ≈10 calm, 20+ elevated, 30+ panic" }),
+    rangeCard("S&P 500", m.sp500, { fmt: num, title: rangeTitle }),
+    rangeCard("Nasdaq 100", m.nasdaq, { fmt: num, title: rangeTitle }),
+    rangeCard("10Y Yield", m.tnx, { fmt: v => `${v.toFixed(2)}%`, title: rangeTitle }),
     oppCard(watchlistData),
     pulseCard(watchlistData),
   ];
