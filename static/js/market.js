@@ -46,15 +46,14 @@ function oppCard(wd) {
   const sectors = new Set();
   for (const t in (wd || {})) {
     const d = wd[t];
-    const a = d?.scores?.composite_long?.action;
-    if (a === "BUY" || a === "STRONG-BUY") {
+    if (d?.scores?.composite_long?.action === "STRONG-BUY") {
       buys++;
       if (d?.snapshot?.sector) sectors.add(d.snapshot.sector);
     }
   }
   const sub = buys ? `across ${sectors.size} sector${sectors.size === 1 ? "" : "s"}` : "none right now";
   return statCard("Opportunities", buys, sub, buys ? "s-green" : "",
-    "Names with a BUY or STRONG-BUY verdict, and how many distinct sectors they span");
+    "Names with a STRONG-BUY verdict, and how many distinct sectors they span");
 }
 
 function pulseCard(wd) {
