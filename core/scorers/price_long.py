@@ -42,16 +42,18 @@ def score(fundamentals: list[dict], snapshot: dict) -> dict:
     else:
         sub["analyst_upside"] = None
 
-    # 4. Valuation reasonableness (0-20) — forward vs trailing PE, PEG, growth-adj P/S
+    # 4. Valuation reasonableness (0-20) — how cheap the multiples are (the LEVEL, not the earnings
+    #    trend): absolute forward P/E, PEG, growth-adj P/S. The old first term scored the fwd-vs-trailing
+    #    P/E ratio, which rewards earnings GROWTH, not cheapness — a 40x name growing into it beat a 10x
+    #    flat one. That's a trajectory signal leaking into the valuation axis (growth lives only in
+    #    fundamental_momentum), and it made a cheap-but-decelerating name (NVO ~15x) score 0 here.
     fwd_pe = snapshot.get("forward_pe")
-    trl_pe = snapshot.get("trailing_pe")
     peg = snapshot.get("peg_ratio")
     ps = snapshot.get("price_to_sales")
     rev_g = snapshot.get("revenue_growth")
     pts, avail = 0.0, 0.0
-    if fwd_pe and trl_pe and fwd_pe > 0 and trl_pe > 0:
-        ratio = trl_pe / fwd_pe  # > 1 means earnings expected to grow
-        pts += clamp((ratio - 1) / 0.20, 0, 1) * 6 + (6 if ratio > 1 else 0)
+    if fwd_pe and fwd_pe > 0:
+        pts += 12 if fwd_pe < 15 else (9 if fwd_pe < 22 else (6 if fwd_pe < 30 else (3 if fwd_pe < 40 else 0)))
         avail += 12
     if peg is not None and peg > 0:
         pts += 8 if peg < 1.0 else (5 if peg < 1.5 else (2 if peg < 2.5 else 0))
