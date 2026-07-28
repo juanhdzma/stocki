@@ -37,6 +37,7 @@ function filteredWatchlist() {
     if (f.action && d?.scores?.composite_long?.action !== f.action) return false;
     if (f.signal && d?.scores?.buy_target?.signal !== f.signal) return false;
     if (f.sector && (d?.snapshot?.sector || "") !== f.sector) return false;
+    if (f.flag && !(d?.scores?.flags || []).some(fl => fl.key === f.flag)) return false;
     if (q && !t.toLowerCase().includes(q) && !(d?.snapshot?.name || "").toLowerCase().includes(q)) return false;
     return true;
   });
@@ -53,7 +54,7 @@ function setWlFilter(dim, value) {
 }
 
 function clearWlFilters() {
-  state.wlFilters = { action: "", signal: "", sector: "", search: "" };
+  state.wlFilters = { action: "", signal: "", sector: "", flag: "", search: "" };
   sessionStorage.setItem("wlFilters", JSON.stringify(state.wlFilters));
   renderHomeSections();
 }
@@ -63,7 +64,9 @@ function renderWlFilterBar() {
   const opt = (v, label, cur) => `<option value="${v}"${v === cur ? " selected" : ""}>${label}</option>`;
   const sectors = [...new Set(state.watchlist.map(t => state.watchlistData[t]?.snapshot?.sector).filter(Boolean))].sort();
   const actions = [["STRONG-BUY", "Strong Buy"], ["BUY", "Buy"], ["HOLD", "Hold"], ["SELL", "Sell"], ["STRONG-SELL", "Strong Sell"]];
-  const active = f.action || f.signal || f.sector || f.search;
+  const flagLabels = { rev: "REV↓", cyclical: "CYCLICAL", expensive: "$$$", earnings: "Earnings soon", price: "PRICE?" };
+  const flags = [...new Set(state.watchlist.flatMap(t => (state.watchlistData[t]?.scores?.flags || []).map(fl => fl.key)))].sort();
+  const active = f.action || f.signal || f.sector || f.flag || f.search;
   return `<div class="wl-filters">
     <input id="wl-search" class="wl-filter wl-search${f.search ? " wl-filter-on" : ""}" type="text"
       placeholder="Search ticker…" autocomplete="off" spellcheck="false" value="${(f.search || "").replace(/"/g, "&quot;")}"
@@ -77,6 +80,9 @@ function renderWlFilterBar() {
     <select class="wl-filter${f.sector ? " wl-filter-on" : ""}" onchange="setWlFilter('sector', this.value)">
       <option value="">Sector: all</option>${sectors.map(s => opt(s, s, f.sector)).join("")}
     </select>
+    ${flags.length ? `<select class="wl-filter${f.flag ? " wl-filter-on" : ""}" onchange="setWlFilter('flag', this.value)">
+      <option value="">Flag: all</option>${flags.map(k => opt(k, flagLabels[k] || k, f.flag)).join("")}
+    </select>` : ""}
     ${active ? `<button class="wl-filter-clear" onclick="clearWlFilters()">✕ clear</button>` : ""}
   </div>`;
 }

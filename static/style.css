@@ -471,7 +471,6 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   border-radius: 3px;
   letter-spacing: 0.04em;
   vertical-align: middle;
-  cursor: help;
   white-space: nowrap;
 }
 .risk-rev       { background: rgba(255,140,0,0.15);  color: var(--s2); }
