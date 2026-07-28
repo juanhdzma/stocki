@@ -320,8 +320,9 @@ def _risk_flags(
         flags.append(
             {
                 "key": "earnings",
-                "label": f"E-{days}d",
-                "title": f"Earnings in ~{days} day(s) — event risk before any entry",
+                "label": "E today" if days == 0 else f"E-{days}d",
+                "title": ("Earnings today" if days == 0 else f"Earnings in ~{days} day(s)")
+                + " — event risk before any entry",
             }
         )
 

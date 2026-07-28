@@ -31,11 +31,13 @@ function setWlSort(col) {
 
 function filteredWatchlist() {
   const f = state.wlFilters;
+  const q = (f.search || "").trim().toLowerCase();
   return state.watchlist.filter(t => {
     const d = state.watchlistData[t];
     if (f.action && d?.scores?.composite_long?.action !== f.action) return false;
     if (f.signal && d?.scores?.buy_target?.signal !== f.signal) return false;
     if (f.sector && (d?.snapshot?.sector || "") !== f.sector) return false;
+    if (q && !t.toLowerCase().includes(q) && !(d?.snapshot?.name || "").toLowerCase().includes(q)) return false;
     return true;
   });
 }
@@ -44,10 +46,14 @@ function setWlFilter(dim, value) {
   state.wlFilters[dim] = value;
   sessionStorage.setItem("wlFilters", JSON.stringify(state.wlFilters));
   renderHomeSections();
+  if (dim === "search") {  // re-render recreates the input — restore focus + caret
+    const el = document.getElementById("wl-search");
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  }
 }
 
 function clearWlFilters() {
-  state.wlFilters = { action: "", signal: "", sector: "" };
+  state.wlFilters = { action: "", signal: "", sector: "", search: "" };
   sessionStorage.setItem("wlFilters", JSON.stringify(state.wlFilters));
   renderHomeSections();
 }
@@ -57,8 +63,11 @@ function renderWlFilterBar() {
   const opt = (v, label, cur) => `<option value="${v}"${v === cur ? " selected" : ""}>${label}</option>`;
   const sectors = [...new Set(state.watchlist.map(t => state.watchlistData[t]?.snapshot?.sector).filter(Boolean))].sort();
   const actions = [["STRONG-BUY", "Strong Buy"], ["BUY", "Buy"], ["HOLD", "Hold"], ["SELL", "Sell"], ["STRONG-SELL", "Strong Sell"]];
-  const active = f.action || f.signal || f.sector;
+  const active = f.action || f.signal || f.sector || f.search;
   return `<div class="wl-filters">
+    <input id="wl-search" class="wl-filter wl-search${f.search ? " wl-filter-on" : ""}" type="text"
+      placeholder="Search ticker…" autocomplete="off" spellcheck="false" value="${(f.search || "").replace(/"/g, "&quot;")}"
+      oninput="setWlFilter('search', this.value)">
     <select class="wl-filter${f.action ? " wl-filter-on" : ""}" onchange="setWlFilter('action', this.value)">
       <option value="">Action: all</option>${actions.map(([v, l]) => opt(v, l, f.action)).join("")}
     </select>
@@ -324,23 +333,6 @@ async function handleRefreshAll() {
   if (btn) { btn.textContent = "↻ Refresh"; btn.disabled = false; btn.classList.remove("loading"); }
 }
 
-async function handleRescore() {
-  const allTickers = [...new Set([...state.portfolio, ...state.watchlist])];
-  if (!allTickers.length) return;
-  const btn = document.getElementById("rescore-btn");
-  if (btn) { btn.textContent = "⟲ …"; btn.disabled = true; btn.classList.add("loading"); }
-
-  try {
-    const wlRes = await fetch("/api/watchlist?tickers=" + allTickers.join(","));
-    state.watchlistData = await wlRes.json();
-    renderHomeSections();
-  } catch (e) {
-    console.error("Rescore failed:", e);
-  }
-
-  if (btn) { btn.textContent = "⟲ Rescore"; btn.disabled = false; btn.classList.remove("loading"); }
-}
-
 async function handleRefreshPortfolio() {
   if (!state.portfolio.length) return;
   const btn = document.getElementById("refresh-pf-btn");
@@ -388,7 +380,6 @@ function renderHeader(mode, ticker, refreshedAt) {
 <div class="header-left">
   <h1>Stocki</h1>
   <span id="yf-badge" class="yf-badge">yf …</span>
-  <button id="rescore-btn" class="btn btn-secondary" onclick="handleRescore()" title="Recompute scores from cached DB data — no external fetch">⟲ Rescore</button>
 </div>
 <div class="header-right">
   <div class="search-wrap">
@@ -510,7 +501,7 @@ function showDeltaTooltip(event, ticker){ showOverlay(event, buildDeltaTooltip(t
 function showBuyTargetTooltip(event, ticker){ showOverlay(event, buildBuyTargetTooltip(ticker, state.watchlistData[ticker])); }
 
 Object.assign(window, {
-  navigate, handleAddTicker, handleRefreshAll, handleRescore, removeTicker,
+  navigate, handleAddTicker, handleRefreshAll, removeTicker,
   moveToPortfolio, moveToWatchlist, setPfSort, setWlSort, setWlFilter, clearWlFilters, triggerImport,
   handleImportFile, showScoreTooltip, showDeltaTooltip, showBuyTargetTooltip, hideTooltip,
   editHolding, saveHolding, cancelEdit, handleRefreshPortfolio,

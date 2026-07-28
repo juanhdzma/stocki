@@ -853,6 +853,8 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   cursor: pointer;
 }
 .wl-filter:hover { border-color: var(--subtext); }
+.wl-search { min-width: 150px; }
+.wl-search::placeholder { color: var(--subtext); }
 .wl-filter-on { border-color: var(--blue); color: var(--blue); }
 .wl-filter-clear {
   background: none;

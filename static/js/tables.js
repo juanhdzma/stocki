@@ -158,7 +158,7 @@ export function renderTickerTable(tickers, sc, sd, sortFnName, actionCell, pfCol
       <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_1w)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_12m)}</td>
       <td style="font-variant-numeric:tabular-nums">${snap.week52_high != null ? `$${snap.week52_high.toFixed(2)}` : "—"}</td>
-      <td style="font-variant-numeric:tabular-nums;cursor:help"
+      <td style="font-variant-numeric:tabular-nums"
         onmouseenter="showBuyTargetTooltip(event,'${ticker}')" onmouseleave="hideTooltip()">${fmtBuyTargetHtml(buyTarget)}</td>
     `;
 
@@ -382,7 +382,7 @@ export function renderPortfolioTable(tickers) {
     const scoreCell = `<td class="col-sep ${scoreColor(longScore)}" style="text-align:center"
         onmouseenter="${wd ? `showScoreTooltip(event,'${ticker}','composite_long')` : ''}"
         onmouseleave="hideTooltip()">${longScore != null ? longScore.toFixed(1) : "—"}</td>`;
-    const btCell = `<td style="font-variant-numeric:tabular-nums;cursor:help"
+    const btCell = `<td style="font-variant-numeric:tabular-nums"
         onmouseenter="showBuyTargetTooltip(event,'${ticker}')" onmouseleave="hideTooltip()">${fmtBuyTargetHtml(wd?.scores?.buy_target)}</td>`;
 
     const holdingCells = `

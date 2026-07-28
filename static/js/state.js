@@ -7,5 +7,5 @@ export const state = {
   pfSortDir: Number(sessionStorage.getItem("pfSortDir") ?? -1),
   wlSortCol: sessionStorage.getItem("wlSortCol") ?? "ticker",
   wlSortDir: Number(sessionStorage.getItem("wlSortDir") ?? 1),
-  wlFilters: JSON.parse(sessionStorage.getItem("wlFilters") ?? '{"action":"","signal":"","sector":""}'),
+  wlFilters: JSON.parse(sessionStorage.getItem("wlFilters") ?? '{"action":"","signal":"","sector":"","search":""}'),
 };
