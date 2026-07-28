@@ -55,6 +55,10 @@ Columns: **snap** (price snapshot) · **fund** (annual fundamentals) · **qtrs**
 
 Click any ticker row to open its detail view: price target bar, revenue/net income chart, key ratios, insider activity, and score breakdown.
 
+## Market cards
+
+A row of cards at the top gives market context: **VIX** (with a calm→fear range bar), **S&P 500**, **Nasdaq 100**, and the **10Y yield** (each with its day change and 52-week range position), plus two watchlist-derived cards — **Opportunities** (how many of your names are a BUY verdict / at their entry price) and **Pulse** (your list's average move today).
+
 ## Reading the table
 
 **Scores (0–100)** — hover any for the full breakdown:
@@ -104,3 +108,4 @@ The backend is a FastAPI app. Interactive docs available at [http://localhost:85
 | `POST` | `/api/refresh/{ticker}` | Trigger refresh for a single ticker |
 | `GET` | `/api/status` | Data freshness per ticker (`?tickers=A,B,C`) |
 | `GET` | `/api/system/info` | Runtime info (yfinance auth status, DB counts) |
+| `GET` | `/api/market` | Market-context data (VIX, S&P 500, Nasdaq 100, 10Y yield) for the top cards |

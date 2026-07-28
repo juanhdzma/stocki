@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from api.routers import history, lookup, portfolio, refresh, status, system, watchlist
+from api.routers import history, lookup, market, portfolio, refresh, status, system, watchlist
 from core.fetchers.yahoo import init_auth
 from db.cache import engine, init_db
 
@@ -34,6 +34,7 @@ app.include_router(watchlist.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
 app.include_router(status.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
+app.include_router(market.router, prefix="/api")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

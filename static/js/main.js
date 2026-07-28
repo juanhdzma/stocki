@@ -4,6 +4,7 @@ import { _toggleSort, renderTickerTable, renderPortfolioTable } from "./tables.j
 import { render, loadPriceTrend } from "./cards.js";
 import { buildScoreTooltip, buildDeltaTooltip, buildBuyTargetTooltip } from "./tooltips.js";
 import { showOverlay, hideTooltip } from "./overlay.js";
+import { renderMarketBar } from "./market.js";
 import { priceChartHover, chartHoverEnd } from "./charts.js";
 
 async function loadLists() {
@@ -104,7 +105,7 @@ function renderHomeSections() {
     return;
   }
 
-  let html = "";
+  let html = renderMarketBar(state.market, state.watchlistData);
 
   if (state.portfolio.length) {
     const pfTotal = state.portfolio.reduce((sum, t) => {
@@ -165,16 +166,18 @@ async function showHome() {
   }
 
   try {
-    const [wlRes, pfRes, stRes] = await Promise.all([
+    const [wlRes, pfRes, stRes, mkRes] = await Promise.all([
       fetch("/api/watchlist?tickers=" + allTickers.join(",")),
       fetch("/api/portfolio/prices"),
       fetch("/api/status?tickers="   + allTickers.join(",")),
+      fetch("/api/market").catch(() => null),
     ]);
     state.watchlistData = await wlRes.json();
     state.tickerStatus  = await stRes.json();
     const pfRaw   = await pfRes.json();
     const { _running, ...pfPrices } = pfRaw;
     state.portfolioData = pfPrices;
+    if (mkRes && mkRes.ok) state.market = await mkRes.json();
   } catch (e) {
     console.error("Home load failed:", e);
   }

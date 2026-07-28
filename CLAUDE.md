@@ -212,6 +212,7 @@ Returns `{price, pct_from_current, signal, …breakdown}` where `signal` is `"bu
 | `POST` | `/api/refresh/{ticker}` | Trigger refresh for a single ticker |
 | `GET` | `/api/status` | Data freshness per ticker (`?tickers=A,B,C`) |
 | `GET` | `/api/system/info` | Runtime info (yfinance auth status, DB counts) |
+| `GET` | `/api/market` | Market-context cards data: VIX / S&P 500 / Nasdaq 100 / 10Y yield (value + day change + 52w range), cached 60s |
 
 Interactive docs at http://localhost:8503/docs.
 
