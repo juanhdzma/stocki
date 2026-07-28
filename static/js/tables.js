@@ -46,7 +46,7 @@ export const SCORE_COLS_INTERMEDIATE = [
 ];
 
 export const SCORE_COLS_FINAL = [
-  { key: "composite_long",  label: "Long"  },
+  { key: "composite_long",  label: "Score" },
 ];
 
 export const SCORE_COLS = [...SCORE_COLS_INTERMEDIATE, ...SCORE_COLS_FINAL];
@@ -298,7 +298,7 @@ export function renderPortfolioTable(tickers) {
     ${sortTh("year_change","52W %")}
     ${sortTh("ath",        "52W Hi")}
     ${sortTh("pct_52w",   "vs 52W")}
-    <th class="col-sep" style="text-align:center">Long</th>
+    <th class="col-sep" style="text-align:center">Score</th>
     <th style="text-align:left">Buy Target</th>
     ${sortTh("cost_basis", "Avg Cost", "col-sep pf-col", "text-align:right")}
     ${sortTh("shares",     "Shares",     "pf-col",          "text-align:right")}
