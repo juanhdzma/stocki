@@ -1366,7 +1366,23 @@ def test_risk_flags_none_when_healthy():
     from core.scorers.composite import _risk_flags
 
     # cheap forward P/E, ordinary sales multiple -> not expensive, no other flag.
-    assert _risk_flags([], {"forward_pe": 18.0, "price_to_sales": 3.0, "revenue_growth": 0.25}) == []
+    assert (
+        _risk_flags([], {"forward_pe": 18.0, "price_to_sales": 3.0, "revenue_growth": 0.25}) == []
+    )
+
+
+def test_risk_flags_new_when_under_a_year_of_history():
+    from core.scorers.composite import _risk_flags
+
+    # no 12m return but a 1w return exists -> recently listed.
+    new = _risk_flags([], {"returns": {"ticker_return_1w": 0.05, "ticker_return_12m": None}})
+    assert any(f["key"] == "new" for f in new)
+    # a full year of history -> not new.
+    seasoned = _risk_flags([], {"returns": {"ticker_return_1w": 0.05, "ticker_return_12m": 0.3}})
+    assert not any(f["key"] == "new" for f in seasoned)
+    # total price-fetch failure (empty returns) is data-broken, not "new".
+    broken = _risk_flags([], {"returns": {}})
+    assert not any(f["key"] == "new" for f in broken)
 
 
 def test_cyclical_surge_flags_recovery_off_a_trough():

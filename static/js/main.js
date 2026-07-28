@@ -64,7 +64,7 @@ function renderWlFilterBar() {
   const opt = (v, label, cur) => `<option value="${v}"${v === cur ? " selected" : ""}>${label}</option>`;
   const sectors = [...new Set(state.watchlist.map(t => state.watchlistData[t]?.snapshot?.sector).filter(Boolean))].sort();
   const actions = [["STRONG-BUY", "Strong Buy"], ["BUY", "Buy"], ["HOLD", "Hold"], ["SELL", "Sell"], ["STRONG-SELL", "Strong Sell"]];
-  const flagLabels = { rev: "REV↓", cyclical: "CYCLICAL", expensive: "$$$", earnings: "Earnings soon", price: "PRICE?" };
+  const flagLabels = { new: "NEW", rev: "REV↓", cyclical: "CYCLICAL", expensive: "$$$", earnings: "Earnings soon", price: "PRICE?" };
   const flags = [...new Set(state.watchlist.flatMap(t => (state.watchlistData[t]?.scores?.flags || []).map(fl => fl.key)))].sort();
   const active = f.action || f.signal || f.sector || f.flag || f.search;
   return `<div class="wl-filters">

@@ -411,6 +411,20 @@ def _risk_flags(
     fundamentals: list[dict], snapshot: dict, as_of: datetime | None = None
 ) -> list[dict]:
     flags: list[dict] = []
+
+    # Recently listed: no 12-month return means under a year of trading history. Guard on a short
+    # return being present so a total price-fetch failure (empty returns) isn't mistaken for "new".
+    returns = snapshot.get("returns") or {}
+    if returns.get("ticker_return_12m") is None and returns.get("ticker_return_1w") is not None:
+        flags.append(
+            {
+                "key": "new",
+                "label": "NEW",
+                "title": "Recently listed — under a year of trading history, so trend and "
+                "volatility signals are thin",
+            }
+        )
+
     rev_g = snapshot.get("revenue_growth")
     if _revenue_shrinking(fundamentals):
         yoy = f" ({rev_g:+.0%} YoY)" if rev_g is not None else ""

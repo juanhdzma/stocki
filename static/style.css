@@ -478,6 +478,7 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 .risk-expensive { background: rgba(255,140,0,0.12);  color: var(--s2); }
 .risk-price     { background: rgba(255,68,68,0.18);  color: var(--red); }
 .risk-cyclical  { background: rgba(255,140,0,0.15);  color: var(--s2); }
+.risk-new       { background: rgba(88,166,255,0.15); color: var(--blue); }
 
 /* ── Insider summary strip ───────────────────────────────── */
 .insider-summary {
