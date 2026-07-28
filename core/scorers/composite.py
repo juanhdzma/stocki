@@ -292,8 +292,32 @@ def _is_cyclical_surge(fundamentals: list[dict], snapshot: dict) -> bool:
     return False
 
 
+_EXPENSIVE_FWD_PE = 30.0  # profitable: forward P/E above this AND ...
+_EXPENSIVE_ADJ_PS = 8.0  # ... growth-adjusted P/S above this → expensive (needs BOTH)
+_EXPENSIVE_PREPROFIT_PS = 20.0  # pre-profit: raw P/S above this is the expensive tell
+
+
+def _is_expensive(snapshot: dict) -> bool:
+    """Rich valuation — but confirmed on TWO independent bases so single-metric artifacts don't misfire:
+    a high P/E from *depressed* earnings (high PE, ordinary sales multiple) and a high P/S from *fat
+    margins* (rich sales, ordinary PE) each fail the AND. Profitable names must be rich on both forward
+    earnings AND growth-adjusted sales; pre-profit names have no earnings anchor, so a high RAW sales
+    multiple is the tell (the growth-adjustment is unreliable off a near-zero revenue base). Deliberately
+    NOT derived from price_long's `valuation` sub-score — that mixes in earnings-trend momentum, so it
+    flagged cheap-but-decelerating names (NVO at 15.6x PE) and missed expensive-but-growing ones (TSLA)."""
+    fwd = snapshot.get("forward_pe")
+    ps = snapshot.get("price_to_sales")
+    if ps is None:
+        return False
+    if fwd is not None and fwd > 0:
+        rg = snapshot.get("revenue_growth")
+        adj_ps = ps / (1 + rg) if (rg is not None and rg > -1) else ps
+        return fwd > _EXPENSIVE_FWD_PE and adj_ps > _EXPENSIVE_ADJ_PS
+    return ps > _EXPENSIVE_PREPROFIT_PS
+
+
 def _risk_flags(
-    fundamentals: list[dict], price_long: dict, snapshot: dict, as_of: datetime | None = None
+    fundamentals: list[dict], snapshot: dict, as_of: datetime | None = None
 ) -> list[dict]:
     flags: list[dict] = []
     rev_g = snapshot.get("revenue_growth")
@@ -327,14 +351,12 @@ def _risk_flags(
             }
         )
 
-    val = (price_long.get("sub_scores") or {}).get("valuation")
-    vmax = (price_long.get("max_pts") or {}).get("valuation")
-    if val is not None and vmax and val / vmax < 0.30:
+    if _is_expensive(snapshot):
         flags.append(
             {
                 "key": "expensive",
                 "label": "$$$",
-                "title": "Rich valuation — PE/PEG/P-S in the expensive tier",
+                "title": "Rich valuation — expensive on both forward earnings and sales",
             }
         )
 
@@ -362,5 +384,5 @@ def compute_all(fundamentals: list[dict], snapshot: dict, as_of: datetime | None
         "price_long": price_long,
         "composite_long": _composite_long(base, price_long, snapshot),
         "buy_target": _buy_target(snapshot),
-        "flags": _risk_flags(fundamentals, price_long, snapshot, as_of),
+        "flags": _risk_flags(fundamentals, snapshot, as_of),
     }

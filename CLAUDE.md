@@ -177,7 +177,7 @@ Returns `{price, pct_from_current, signal, …breakdown}` where `signal` is `"bu
 |-----|---------|
 | `REV↓` | Revenue shrinking YoY — composite capped below STRONG-BUY |
 | `CYCLICAL` | Big revenue surge off a prior down-year — likely a cycle peak (Growth inflated), not durable growth |
-| `$$$` | Valuation in the expensive tier |
+| `$$$` | Rich valuation (`_is_expensive`) — confirmed on two independent bases so single-metric artifacts don't misfire: profitable names must be rich on **both** forward P/E (>30) **and** growth-adjusted P/S (>8); pre-profit names (no positive P/E) flag on a high **raw** P/S (>20). Deliberately not derived from `price_long`'s `valuation` sub-score, which mixes in earnings-trend momentum (flagged cheap-but-decelerating names, missed expensive-but-growing ones). |
 | `E-Nd` | Earnings in ~N days — event risk |
 | `PRICE?` | Quote deviates >50% from prior close (`price_suspect`) — data may be wrong |
 

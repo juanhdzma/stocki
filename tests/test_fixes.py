@@ -1237,6 +1237,24 @@ def test_buy_target_none_without_price_or_anchor():
     assert _buy_target({"price": 100.0, "week52_high": 0.0}) is None
 
 
+def test_is_expensive_needs_two_signals():
+    from core.scorers.composite import _is_expensive
+
+    # profitable & rich on BOTH forward earnings and growth-adjusted sales -> expensive.
+    assert _is_expensive({"forward_pe": 40.0, "price_to_sales": 15.0, "revenue_growth": 0.0}) is True
+    # cheap forward P/E -> not expensive no matter the sales multiple (NVO case).
+    assert _is_expensive({"forward_pe": 15.6, "price_to_sales": 30.0, "revenue_growth": 0.0}) is False
+    # depressed earnings: high P/E but ordinary sales multiple -> only one signal -> not expensive.
+    assert _is_expensive({"forward_pe": 45.0, "price_to_sales": 3.0, "revenue_growth": 0.0}) is False
+    # fat margins: rich sales but ordinary P/E -> only one signal -> not expensive (TXN case).
+    assert _is_expensive({"forward_pe": 25.0, "price_to_sales": 15.0, "revenue_growth": 0.0}) is False
+    # pre-profit (no positive P/E): a high RAW sales multiple is the tell.
+    assert _is_expensive({"forward_pe": None, "price_to_sales": 25.0}) is True
+    assert _is_expensive({"forward_pe": -8.0, "price_to_sales": 5.0}) is False
+    # no sales multiple to judge -> not flagged.
+    assert _is_expensive({"forward_pe": 50.0}) is False
+
+
 def test_recent_periods_picks_newest_of_each_type():
     from scheduler.worker import _recent_periods
 
@@ -1280,8 +1298,7 @@ def test_insider_no_valid_trades_is_none_not_50():
 def test_risk_flags_revenue_decline_and_price_suspect():
     from core.scorers.composite import _risk_flags
 
-    pl = {"sub_scores": {"valuation": 15.0}, "max_pts": {"valuation": 20.0}}
-    flags = _risk_flags([], pl, {"revenue_growth": -0.04, "price_suspect": True})
+    flags = _risk_flags([], {"revenue_growth": -0.04, "price_suspect": True})
     keys = {f["key"] for f in flags}
     assert "rev" in keys and "price" in keys
 
@@ -1289,19 +1306,16 @@ def test_risk_flags_revenue_decline_and_price_suspect():
 def test_risk_flags_expensive_valuation():
     from core.scorers.composite import _risk_flags
 
-    pl = {
-        "sub_scores": {"valuation": 3.0},
-        "max_pts": {"valuation": 20.0},
-    }  # 15% of max -> expensive
-    flags = _risk_flags([], pl, {"revenue_growth": 0.2})
+    # rich on both forward P/E and growth-adjusted sales -> $$$.
+    flags = _risk_flags([], {"forward_pe": 40.0, "price_to_sales": 15.0, "revenue_growth": 0.2})
     assert any(f["key"] == "expensive" for f in flags)
 
 
 def test_risk_flags_none_when_healthy():
     from core.scorers.composite import _risk_flags
 
-    pl = {"sub_scores": {"valuation": 18.0}, "max_pts": {"valuation": 20.0}}
-    assert _risk_flags([], pl, {"revenue_growth": 0.25}) == []
+    # cheap forward P/E, ordinary sales multiple -> not expensive, no other flag.
+    assert _risk_flags([], {"forward_pe": 18.0, "price_to_sales": 3.0, "revenue_growth": 0.25}) == []
 
 
 def test_cyclical_surge_flags_recovery_off_a_trough():
