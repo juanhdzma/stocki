@@ -266,30 +266,99 @@ def _days_to_earnings(dates: list | None, as_of: datetime | None = None) -> int 
     return min(future) if future else None
 
 
-def _is_cyclical_surge(fundamentals: list[dict], snapshot: dict) -> bool:
-    """A big revenue surge coming off a prior down-year is a cyclical recovery, not durable
-    growth — the classic memory/semis trap where a name looks best right at the cycle peak.
-    A secular grower never declines YoY; a cyclical oscillates. So: surging now AND a real
-    (>10%) down-year somewhere in the annual history → treat the growth read with suspicion."""
-    rev_g = snapshot.get("revenue_growth")
-    if rev_g is None or rev_g < 0.40:
-        return False
-    revs = [a["revenue"] for a in all_annual(fundamentals) if a.get("revenue") is not None]
-    if len(revs) < 3:
-        return False
-    chron = revs[::-1]  # oldest → newest
+_CYCLICAL_MIN_OPM = -0.25  # deeper burn than this = pre-revenue noise, not a real cycle
+_CYCLICAL_SURGE_STRONG = 0.40  # rev_g at/above this qualifies on its own
+_CYCLICAL_SURGE_MILD = 0.20  # below the strong gate, needs a deep past trough too
+_CYCLICAL_DEEP_TROUGH = 0.20  # worst historical down-year ≥ this pairs with a mild surge
+_CYCLICAL_EARNINGS_AMP = (
+    1.5  # ebit must fall ≥ this × the revenue drop to count as operating leverage
+)
+_CYCLICAL_RECOVERED_FRAC = (
+    0.85  # latest annual revenue must reach this × its peak to be "off" the trough
+)
+
+
+def _trough_depth(fundamentals: list[dict], field: str) -> float | None:
+    """Deepest real down-year in `field`'s annual history, as a fraction below a comparable peak.
+    A real cycle oscillates around a comparable level: an EARLIER year that peaked at ≥50% of
+    today's value, then a LATER year fell below it. `None` if no such oscillation exists — excludes
+    early-stage noise / a one-off reset (NBIS post-divestiture) where the prior "peak" is immaterial
+    vs. today, i.e. a small base or a corporate action, not a cycle. Requires a positive latest so a
+    name currently in the red (no earnings peak to be inflated by a cycle) isn't scored on it."""
+    vals = [a[field] for a in all_annual(fundamentals) if a.get(field) is not None]
+    if len(vals) < 3:
+        return None
+    chron = vals[::-1]  # oldest → newest
     latest = chron[-1]
     if latest <= 0:
-        return False
-    # A real cycle oscillates around a comparable level: an EARLIER year that peaked at
-    # ≥50% of today's revenue, then a LATER year fell >10% below it. This excludes early-
-    # stage noise / a one-off reset (NBIS post-divestiture) where the prior "peak" is
-    # immaterial vs. today — that's not a cycle, just a small base or a corporate action.
+        return None
+    worst = 0.0
     for i in range(len(chron) - 1):
         peak = chron[i]
-        if peak >= 0.50 * latest and any(chron[j] < peak * 0.90 for j in range(i + 1, len(chron))):
-            return True
-    return False
+        if peak > 0 and peak >= 0.50 * latest:
+            for j in range(i + 1, len(chron)):
+                worst = max(worst, 1 - chron[j] / peak)
+    return worst if worst > 0.10 else None
+
+
+def _cyclical_depth(fundamentals: list[dict]) -> tuple[float | None, bool]:
+    """Cyclicality depth, and whether earnings corroborated it. A revenue trough is the anchor —
+    earnings alone are too noisy (they cross zero and swing on one-offs, so a near-breakeven secular
+    grower looks 'cyclical'). But a genuine semis-style cyclical shows operating leverage: ebit falls
+    much harder than revenue (≥1.5×). When it does, the deeper ebit trough is the truer read of the
+    cycle (and corroborates it independently) — this catches margin-cyclicals whose revenue dip alone
+    (<20%) is too shallow to flag (CGNX, INTC), while a shallow-leverage name (LRCX, ebit ≈ revenue)
+    stays on its revenue depth. No revenue cycle → not cyclical: returns (None, False)."""
+    d_rev = _trough_depth(fundamentals, "revenue")
+    if d_rev is None:
+        return None, False
+    d_ebit = _trough_depth(fundamentals, "ebit")
+    leverage = d_ebit is not None and d_ebit >= _CYCLICAL_EARNINGS_AMP * d_rev
+    return (max(d_rev, d_ebit) if leverage else d_rev), leverage
+
+
+def _revenue_recovered(fundamentals: list[dict]) -> bool:
+    """Has annual revenue actually climbed back near its peak? The flag's premise is a surge *off* a
+    prior down-year, which presupposes recovery. A name still mired near its revenue trough hasn't
+    surged off anything, however high a spiky quarterly YoY reads (MP/AXTI — small-cap/commodity
+    names whose latest annual revenue sits far below their peak)."""
+    revs = [a["revenue"] for a in all_annual(fundamentals) if a.get("revenue") is not None]
+    if len(revs) < 2:
+        return False
+    latest = revs[0]  # read_all_fundamentals orders period desc → newest first
+    peak = max(revs)
+    return peak > 0 and latest >= _CYCLICAL_RECOVERED_FRAC * peak
+
+
+def _is_cyclical_surge(fundamentals: list[dict], snapshot: dict) -> bool:
+    """A revenue surge coming off a prior down-year is a cyclical recovery, not durable growth —
+    the classic memory/semis trap where high current growth is really a cycle peak (or a low-base
+    trough bounce). A secular grower never declines; a cyclical oscillates. So: surging now AND a
+    real down-year in the annual history → treat the growth read with suspicion. Gates keep it honest:
+    - Maturity: deeply-burning pre-revenue names (op margin < -25%) oscillate on near-zero revenue,
+      so any wiggle reads as a "cycle" — that's noise, not a semis cycle, so they're excluded.
+    - Surge strength scales with trough depth: a strong surge (≥40%) qualifies alone, but a milder
+      one (≥20%) only counts when paired with a genuinely deep past trough (≥20%) — this catches
+      mature cyclicals sitting just under the old hard 40% cliff (ADI, TXN, STM).
+    - Depth spans revenue AND earnings (see `_cyclical_depth`) so margin-cyclicals with a shallow
+      revenue dip but a deep earnings swing (CGNX, INTC) aren't missed.
+    - Recovery: "off a down-year" presupposes revenue climbed back near its peak. A name still near
+      its trough is excluded unless a corroborating earnings-leverage swing confirms the cycle on its
+      own (drops MP/AXTI — near-trough small-caps riding a spiky quarterly YoY — while keeping INTC)."""
+    rev_g = snapshot.get("revenue_growth")
+    if rev_g is None or rev_g < _CYCLICAL_SURGE_MILD:
+        return False
+    opm = snapshot.get("operating_margin")
+    if opm is not None and opm < _CYCLICAL_MIN_OPM:
+        return False
+    depth, earnings_leverage = _cyclical_depth(fundamentals)
+    if depth is None:
+        return False
+    if not earnings_leverage and not _revenue_recovered(fundamentals):
+        return False
+    if rev_g >= _CYCLICAL_SURGE_STRONG:
+        return True
+    return depth >= _CYCLICAL_DEEP_TROUGH
 
 
 _EXPENSIVE_FWD_PE = 30.0  # profitable: forward P/E above this AND ...
@@ -335,7 +404,7 @@ def _risk_flags(
             {
                 "key": "cyclical",
                 "label": "CYCLICAL",
-                "title": f"Revenue +{rev_g:.0%} off a prior down-year — likely a cycle peak, "
+                "title": f"Revenue +{rev_g:.0%} off a prior down-year — cyclical, "
                 "not durable growth (Growth score may be inflated)",
             }
         )

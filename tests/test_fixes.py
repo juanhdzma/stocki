@@ -1404,9 +1404,123 @@ def test_cyclical_surge_counts_zero_revenue_down_year():
     a truthiness filter, which would hide the cycle."""
     from core.scorers.composite import _is_cyclical_surge
 
-    funds = [
-        {"type": "annual", "period": "2022", "revenue": 100.0},
-        {"type": "annual", "period": "2023", "revenue": 0.0},
+    funds = [  # newest first (period desc), as read_all_fundamentals returns them
         {"type": "annual", "period": "2024", "revenue": 120.0},
+        {"type": "annual", "period": "2023", "revenue": 0.0},
+        {"type": "annual", "period": "2022", "revenue": 100.0},
     ]
     assert _is_cyclical_surge(funds, {"revenue_growth": 0.5}) is True
+
+
+# ── cyclical flag: maturity + depth-scaled surge gates (A+B) ────────────────────
+
+
+def test_cyclical_surge_mild_growth_with_deep_trough_flags():
+    """ADI/TXN-shape: a mature semis cyclical surging only +37% (under the old hard 40% cliff)
+    still flags when the annual history shows a genuinely deep (>=20%) down-year."""
+    from core.scorers.composite import _is_cyclical_surge
+
+    ann = [
+        {"type": "annual", "revenue": r} for r in (12.0, 8.0, 10.0, 11.0)
+    ]  # newest first, depth ~27%
+    assert _is_cyclical_surge(ann, {"revenue_growth": 0.37, "operating_margin": 0.38}) is True
+
+
+def test_cyclical_surge_mild_growth_with_shallow_trough_does_not_flag():
+    """A milder surge (<40%) with only a SHALLOW revenue dip (<20%) and no earnings amplification
+    must NOT flag (LRCX-shape: ebit fell ≈ as much as revenue → no operating leverage)."""
+    from core.scorers.composite import _is_cyclical_surge
+
+    ann = [
+        {"type": "annual", "revenue": r, "ebit": r * 0.2} for r in (12.0, 9.5, 10.0, 11.0)
+    ]  # revenue depth ~14%, ebit tracks revenue → no leverage
+    assert _is_cyclical_surge(ann, {"revenue_growth": 0.24, "operating_margin": 0.12}) is False
+
+
+def test_cyclical_surge_excludes_deep_burn_prerevenue():
+    """XNDU/RGTI-shape: near-zero revenue makes any wiggle read as a 'cycle', but an operating
+    margin far below -25% marks a pre-revenue name, not a semis peak -> excluded despite the surge."""
+    from core.scorers.composite import _is_cyclical_surge
+
+    ann = [
+        {"type": "annual", "revenue": r} for r in (12.0, 8.0, 10.0, 11.0)
+    ]  # oscillates, would flag
+    assert _is_cyclical_surge(ann, {"revenue_growth": 3.0, "operating_margin": -8.22}) is False
+
+
+def test_cyclical_surge_keeps_near_breakeven_cyclical():
+    """A recovered commodity cyclical near breakeven (op margin -8%, above the -25% floor) must still
+    flag — the maturity gate only screens deeply-burning pre-revenue noise, not thin-margin names."""
+    from core.scorers.composite import _is_cyclical_surge
+
+    ann = [
+        {"type": "annual", "revenue": r} for r in (12.0, 8.0, 10.0, 11.0)
+    ]  # newest first, recovered
+    assert _is_cyclical_surge(ann, {"revenue_growth": 1.19, "operating_margin": -0.08}) is True
+
+
+# ── cyclical flag: recovery-or-earnings guard (drops MP/AXTI, keeps INTC) ─────────
+
+
+def test_cyclical_surge_drops_name_still_near_its_trough():
+    """MP/AXTI-shape: annual revenue is still far below its peak (a spiky quarterly YoY only *looks*
+    like a surge). With no corroborating earnings-leverage swing, it hasn't come 'off' anything."""
+    from core.scorers.composite import _is_cyclical_surge
+
+    # newest first: latest 0.22 vs peak 0.53 = 42% of peak, well under the 85% recovery bar
+    ann = [{"type": "annual", "revenue": r} for r in (0.22, 0.20, 0.25, 0.53)]
+    assert _is_cyclical_surge(ann, {"revenue_growth": 1.19, "operating_margin": -0.08}) is False
+
+
+def test_cyclical_surge_keeps_near_trough_when_earnings_corroborate():
+    """INTC-shape: revenue still soft (84% of peak, under the recovery bar) but ebit swung violently
+    (operating leverage) — the earnings signal confirms the cycle independently, so it stays flagged."""
+    from core.scorers.composite import _is_cyclical_surge
+
+    ann = [  # newest first; revenue ~flat-soft, ebit collapsed then recovered
+        {"type": "annual", "revenue": rev, "ebit": eb}
+        for rev, eb in [(53.0, 2.65), (53.0, -10.18), (54.0, 1.64), (63.0, 8.26)]
+    ]
+    assert _is_cyclical_surge(ann, {"revenue_growth": 0.25, "operating_margin": 0.12}) is True
+
+
+# ── cyclical flag: operating-leverage earnings signal (margin-cyclicals) ─────────
+
+
+def test_cyclical_surge_earnings_leverage_flags_shallow_revenue_dip():
+    """CGNX-shape: a mild surge with a SHALLOW revenue dip (<20%) still flags when ebit fell far
+    harder (operating leverage) — the margin-cyclical the revenue-only test used to miss."""
+    from core.scorers.composite import _is_cyclical_surge
+
+    # revenue depth ~14%; ebit crashed 60% then recovered → amplifies the cycle
+    ann = [
+        {"type": "annual", "revenue": rev, "ebit": eb}
+        for rev, eb in [(12.0, 1.6), (9.5, 0.5), (10.0, 0.6), (11.0, 1.25)]
+    ]  # newest first
+    assert _is_cyclical_surge(ann, {"revenue_growth": 0.24, "operating_margin": 0.22}) is True
+
+
+def test_cyclical_surge_earnings_signal_needs_a_revenue_cycle():
+    """A secular grower with NO revenue down-year must not flag on earnings alone — a near-breakeven
+    SaaS name (DDOG/ARM-shape) whose ebit wobbles across zero would otherwise look 'cyclical'."""
+    from core.scorers.composite import _is_cyclical_surge
+
+    # revenue monotonically rising (no cycle), ebit noisy across a low base
+    ann = [
+        {"type": "annual", "revenue": rev, "ebit": eb}
+        for rev, eb in [(12.0, 0.3), (9.0, 0.1), (6.0, 0.2), (3.0, 0.05)]
+    ]  # newest first → revenue only ever grew
+    assert _is_cyclical_surge(ann, {"revenue_growth": 0.33, "operating_margin": 0.02}) is False
+
+
+def test_cyclical_surge_earnings_trough_needs_positive_latest():
+    """A name currently losing operating money has no earnings peak for a cycle to inflate — the
+    ebit signal must be skipped when latest ebit <= 0 (it falls back to the revenue cycle)."""
+    from core.scorers.composite import _is_cyclical_surge
+
+    # shallow revenue dip (~14%), ebit deep but latest is negative → ebit signal must not engage
+    ann = [
+        {"type": "annual", "revenue": rev, "ebit": eb}
+        for rev, eb in [(12.0, -0.5), (9.5, 0.5), (10.0, 0.6), (11.0, 1.25)]
+    ]  # newest first, latest ebit < 0
+    assert _is_cyclical_surge(ann, {"revenue_growth": 0.24, "operating_margin": 0.02}) is False

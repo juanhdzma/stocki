@@ -176,7 +176,7 @@ Returns `{price, pct_from_current, signal, …breakdown}` where `signal` is `"bu
 | Tag | Meaning |
 |-----|---------|
 | `REV↓` | Revenue shrinking YoY — composite capped below STRONG-BUY |
-| `CYCLICAL` | Big revenue surge off a prior down-year — likely a cycle peak (Growth inflated), not durable growth |
+| `CYCLICAL` | Revenue surge off a prior down-year — cyclical growth (a cycle peak or a low-base trough bounce), not durable (Growth inflated). Cycle depth spans revenue AND earnings: a margin-cyclical whose revenue dip is shallow but whose ebit fell ≥1.5× harder (operating leverage) still flags. Gated by op-margin > -25% (excludes pre-revenue noise) and a surge that scales with trough depth. |
 | `$$$` | Rich valuation (`_is_expensive`) — confirmed on two independent bases so single-metric artifacts don't misfire: profitable names must be rich on **both** forward P/E (>30) **and** growth-adjusted P/S (>8); pre-profit names (no positive P/E) flag on a high **raw** P/S (>20). Deliberately not derived from `price_long`'s `valuation` sub-score, which mixes in earnings-trend momentum (flagged cheap-but-decelerating names, missed expensive-but-growing ones). |
 | `E-Nd` | Earnings in ~N days — event risk |
 | `PRICE?` | Quote deviates >50% from prior close (`price_suspect`) — data may be wrong |
