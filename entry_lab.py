@@ -106,6 +106,12 @@ RULES = {
     or (s["r6m"] is not None and s["r6m"] > 0 and s["from_high"] <= -0.02),
     "PROD: deep only": lambda s: s["from_high"] <= -0.20,
     "PROD: pullback only": lambda s: s["r6m"] is not None and s["r6m"] > 0 and s["from_high"] <= -0.02,
+    # UNDER TEST: how deep should the drawdown-fallback trigger be? -20% (prod) vs deeper.
+    "dd>=20%": lambda s: s["from_high"] <= -0.20,
+    "dd>=25%": lambda s: s["from_high"] <= -0.25,
+    "dd>=30%": lambda s: s["from_high"] <= -0.30,
+    "dd>=35%": lambda s: s["from_high"] <= -0.35,
+    "dd>=40%": lambda s: s["from_high"] <= -0.40,
     # UNDER TEST: per-ticker "deep" = drawdown >= this name's own median pullback depth,
     # vs the flat −20% ("PROD: deep only"). Same buy_target question, vol-normalized threshold.
     "PT: >=typ_pb": lambda s: s["typ_pb"] is not None and s["from_high"] <= -s["typ_pb"],

@@ -1192,7 +1192,7 @@ def test_buy_target_thin_coverage_falls_back_to_drawdown():
     bt = _buy_target(_bt_snap(95.0, high_52w=100.0, target_low=100.0, target_median=200.0,
                               analyst_count=5, realized_vol=0.30))
     assert bt["method"] == "drawdown"
-    assert bt["price"] == 80.0  # w52*0.80, not the p10 anchor
+    assert bt["price"] == 70.0  # w52*0.70, not the p10 anchor
     assert bt["signal"] == "wait"
 
 
@@ -1200,19 +1200,19 @@ def test_buy_target_drawdown_widened_by_vol_tier():
     from core.scorers.composite import _buy_target
 
     # the volatility discount applies to the drawdown fallback too: high vol -> deeper entry.
-    # anchor = w52*0.80 = 80; alta tier -> 80*0.75 = 60.
+    # anchor = w52*0.70 = 70; high tier -> 70*0.75 = 52.5.
     bt = _buy_target(_bt_snap(70.0, high_52w=100.0, analyst_count=3, realized_vol=0.90))
     assert bt["method"] == "drawdown" and bt["vol_level"] == "high"
-    assert bt["price"] == 60.0
-    assert bt["signal"] == "wait"  # price 70 > 60
+    assert bt["price"] == 52.5
+    assert bt["signal"] == "wait"  # price 70 > 52.5
 
 
 def test_buy_target_falls_back_to_drawdown_without_analyst_targets():
     from core.scorers.composite import _buy_target
 
-    # no analyst coverage -> anchor on the -20%-off-52w-high deep-value zone (baja vol -> no discount).
+    # no analyst coverage -> anchor on the -30%-off-52w-high deep-value zone (low vol -> no discount).
     wait = _buy_target(_bt_snap(95.0, high_52w=100.0, realized_vol=0.30))
-    assert wait["price"] == 80.0
+    assert wait["price"] == 70.0
     assert wait["signal"] == "wait"
     buy = _buy_target(_bt_snap(70.0, high_52w=100.0, realized_vol=0.30))
     assert buy["signal"] == "buy"
@@ -1222,11 +1222,11 @@ def test_buy_target_unmeasurable_vol_is_conservative_not_low():
     from core.scorers.composite import _buy_target
 
     # too little history to measure vol -> "n/a", not "low": apply the full (high) discount.
-    # drawdown anchor 80 * (1 - 0.25) = 60, not 80.
+    # drawdown anchor 70 * (1 - 0.25) = 52.5, not 70.
     bt = _buy_target(_bt_snap(95.0, high_52w=100.0, realized_vol=None))
     assert bt["vol_level"] == "n/a"
     assert bt["mos"] == 0.25
-    assert bt["price"] == 60.0
+    assert bt["price"] == 52.5
 
 
 def test_buy_target_none_without_price_or_anchor():

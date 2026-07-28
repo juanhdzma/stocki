@@ -324,7 +324,7 @@ export function buildBuyTargetTooltip(ticker, d) {
     head = `
       <div class="subtext" style="font-size:11px;margin-bottom:4px">Few analysts (${bt.analysts} &lt; 10) → 52-week-high rule</div>
       ${row("52-week high", $(bt.week52_high))}
-      ${row("−20% = anchor", `<b>${$(bt.anchor)}</b>`)}`;
+      ${row(`${bt.dd != null ? (bt.dd * 100).toFixed(0) : "−30"}% = anchor`, `<b>${$(bt.anchor)}</b>`)}`;
   }
   const body = `${head}${volRow}${winRow}${legend}${row("= Target", `<b>${$(bt.price)}</b>`)}`;
 

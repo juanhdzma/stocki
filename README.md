@@ -66,7 +66,7 @@ A row of cards at the top gives market context: **VIX** (with a calm→fear rang
 
 **Verdict** (per Long score): Strong Buy ≥80 · Buy ≥60 · Hold ≥40 · Sell ≥20 · Strong Sell <20.
 
-**Buy Target** — is it time to buy, or wait for a dip? The target is a conservative entry price: the ~10th percentile of analyst price targets (or, for names with <10 analysts, 20% off the 52-week high), discounted further for volatile names. Hover the cell for the full breakdown.
+**Buy Target** — is it time to buy, or wait for a dip? The target is a conservative entry price: the ~10th percentile of analyst price targets (or, for names with <10 analysts, 30% off the 52-week high), discounted further for volatile names. Hover the cell for the full breakdown.
 - **BUY** (green) — the price is at/below the target.
 - **NEAR −X%** (amber) — almost; a small dip (≤4%) away.
 - **WAIT −X%** (red) — still expensive; wait for that dip.

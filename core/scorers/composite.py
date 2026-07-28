@@ -123,16 +123,17 @@ def _composite_long(base: dict, price_long: dict, snapshot: dict) -> dict:
 # distribution (interpolated LOW→MEDIAN) — a conservative, outlier-robust level grounded in forward
 # fundamentals rather than a single 52-week-high print (which a momentum name's bubble peak makes
 # meaningless — SNDK ran 40→2354 in a year, so 80% of its high = $1888 was a nonsense "buy" above the
-# current price). With thin/absent coverage (~23% of names) it falls back to the −20%-off-52w-high
-# zone, an out-of-sample-validated mean-reversion entry (entry_lab.py: ≥20% off the high beat all else
-# ~+11pp/6m). Either anchor is then discounted by a margin of safety keyed to how much the name moves
+# current price). With thin/absent coverage (~23% of names) it falls back to the −30%-off-52w-high
+# zone, an out-of-sample-validated mean-reversion entry (entry_lab.py: the deeper the trigger the
+# stronger the rebound — −30% off the high gave ~+19pp/6m vs ~+10pp for −20%, at 30% vs 43% coverage).
+# Either anchor is then discounted by a margin of safety keyed to how much the name moves
 # (realized_vol = the average of its 1m/6m/12m annualized realized vol, so a recent-only or year-long
 # spike alone can't dominate), in three discrete tiers — low/mid/high vol → 0/12/25% extra discount. A calm name
 # (AAPL ~25%) buys at the raw anchor; a wild one (SNDK ~110%) needs a 25%-deeper entry. Tried and
 # dropped: an analyst-count weighting (arbitrary; the percentile encodes conservatism directly) and a
 # momentum widener (double-counts with vol on the bubble names — bt_lab). NOT return-validated (analyst
 # targets aren't in a price-only backtest) — behavior-tuned; the knobs below are hand-picked.
-_BUY_TARGET_DEEP_DD = -0.20  # fallback drawdown from the 52w high when analyst targets aren't trusted
+_BUY_TARGET_DEEP_DD = -0.30  # fallback drawdown from the 52w high when analyst targets aren't trusted
 _BT_MIN_ANALYSTS = 10  # below this, the target distribution is too thin to build a percentile from
 _BT_PERCENTILE = 0.10  # target the ~p10 of the analyst distribution: low + (p/0.5)*(median − low)
 _BT_VOL_MID = 0.40  # realized vol ≥ this → "mid" tier; below → "low"
