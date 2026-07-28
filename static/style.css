@@ -480,6 +480,45 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 .risk-cyclical  { background: rgba(255,140,0,0.15);  color: var(--s2); }
 .risk-new       { background: rgba(88,166,255,0.15); color: var(--blue); }
 
+/* ── 52-week price range cell ───────────────────────────────── */
+.range52 { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.range52-price { font-weight: 600; font-variant-numeric: tabular-nums; }
+.range52-ends {
+  display: flex;
+  justify-content: space-between;
+  width: 104px;
+}
+.range52-end {
+  font-size: 9px;
+  color: var(--subtext);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.range52-track {
+  position: relative;
+  width: 104px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.range52-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--subtext);
+}
+.range52-dot {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text);
+  transform: translate(-50%, -50%);
+}
+
 /* ── Insider summary strip ───────────────────────────────── */
 .insider-summary {
   display: flex;

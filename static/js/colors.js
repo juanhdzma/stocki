@@ -55,6 +55,20 @@ export function fmtBuyTargetHtml(bt) {
 
 
 
+export function fmt52wRangeHtml(price, low, high) {
+  if (price == null) return "—";
+  const p = `<span class="range52-price">$${price.toFixed(2)}</span>`;
+  if (low == null || high == null || high <= low) return `<div class="range52">${p}</div>`;
+  const pct = Math.max(0, Math.min(1, (price - low) / (high - low))) * 100;
+  const end = v => v >= 10 ? `$${Math.round(v)}` : `$${v.toFixed(1)}`;
+  return `<div class="range52">
+    ${p}
+    <span class="range52-track"><span class="range52-fill" style="width:${pct.toFixed(1)}%"></span><span class="range52-dot" style="left:${pct.toFixed(1)}%"></span></span>
+    <div class="range52-ends"><span class="range52-end">${end(low)}</span><span class="range52-end">${end(high)}</span></div>
+  </div>`;
+}
+
+
 export function scoreLabel(s) {
   return (s === null || s === undefined) ? "—" : s.toFixed(1);
 }

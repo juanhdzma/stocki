@@ -1,6 +1,6 @@
 import { state } from "./state.js";
 import { fmtRaw, timeAgo, escapeHtml } from "./format.js";
-import { scoreColor, pctScoreColor, actionBadge, actionLabel, fmtBuyTargetHtml } from "./colors.js";
+import { scoreColor, pctScoreColor, actionBadge, actionLabel, fmtBuyTargetHtml, fmt52wRangeHtml } from "./colors.js";
 
 export function getScore(d, col) {
   if (!d) return null;
@@ -12,8 +12,7 @@ export function getScore(d, col) {
     case "price":            return snap.price            ?? null;
     case "day_change":       return snap.day_change_pct   ?? null;
     case "week_change":      return ret.ticker_return_1w  ?? null;
-    case "year_change":      return ret.ticker_return_12m ?? null;
-    case "ath":              return snap.week52_high       ?? null;
+    case "month_change":     return ret.ticker_return_1m  ?? null;
     case "buy_target":       return s.buy_target?.pct_from_current ?? null;
     case "growth":           return s.fundamental_momentum?.score ?? null;
     case "quality":          return s.value_quality?.score        ?? null;
@@ -33,8 +32,7 @@ export const PRICE_COLS = [
   { key: "price",         label: "Price"  },
   { key: "day_change",    label: "Day %"  },
   { key: "week_change",   label: "1W %"   },
-  { key: "year_change",   label: "52W %"  },
-  { key: "ath",           label: "52W Hi" },
+  { key: "month_change",  label: "1M %"   },
   { key: "buy_target",    label: "Buy Target" },
 ];
 
@@ -99,8 +97,7 @@ export function renderTickerTable(tickers, sc, sd, sortFnName, actionCell, pfCol
     ${sortTh("price",       "Price",  "col-sep")}
     ${sortTh("day_change",  "Day %")}
     ${sortTh("week_change", "1W %")}
-    ${sortTh("year_change", "52W %")}
-    ${sortTh("ath",         "52W Hi")}
+    ${sortTh("month_change", "1M %")}
     ${sortTh("buy_target",  "Buy Target")}
     ${pfHeaders}
     ${SCORE_COLS_INTERMEDIATE.map((c, i) => i === 0 ? sepTh(c) : thCell(c)).join("")}
@@ -148,16 +145,14 @@ export function renderTickerTable(tickers, sc, sd, sortFnName, actionCell, pfCol
       return `<span class="${pctScoreColor(v, scale)}">${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%</span>`;
     };
     const fmtDay = v => fmtPct(v, 0.03);
-    const fmtPrice = v => v != null ? `$${v.toFixed(2)}` : "—";
 
     const buyTarget = d.scores?.buy_target;
 
     const priceCells = `
-      <td class="col-sep" style="font-variant-numeric:tabular-nums">${fmtPrice(snap.price)}</td>
+      <td class="col-sep">${fmt52wRangeHtml(snap.price, snap.week52_low, snap.week52_high)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtDay(snap.day_change_pct != null ? snap.day_change_pct / 100 : null)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_1w)}</td>
-      <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_12m)}</td>
-      <td style="font-variant-numeric:tabular-nums">${snap.week52_high != null ? `$${snap.week52_high.toFixed(2)}` : "—"}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_1m, 0.25)}</td>
       <td style="font-variant-numeric:tabular-nums"
         onmouseenter="showBuyTargetTooltip(event,'${ticker}')" onmouseleave="hideTooltip()">${fmtBuyTargetHtml(buyTarget)}</td>
     `;
@@ -259,8 +254,7 @@ export function getPfPrice(ticker, col) {
     case "price":       return price ?? null;
     case "day_change":  return (d?.day_change_pct  ?? wd?.snapshot?.day_change_pct) ?? null;
     case "week_change": return (d?.return_1w        ?? wd?.returns?.ticker_return_1w) ?? null;
-    case "year_change": return (d?.return_12m       ?? wd?.returns?.ticker_return_12m) ?? null;
-    case "ath":         return wd?.snapshot?.week52_high ?? null;
+    case "month_change": return (d?.return_1m       ?? wd?.returns?.ticker_return_1m) ?? null;
     case "pct_52w":    return wd?.snapshot?.pct_from_52w_high ?? null;
     case "cost_basis":  return avgCost;
     case "shares":      return shares;
@@ -295,8 +289,7 @@ export function renderPortfolioTable(tickers) {
     ${sortTh("price",      "Price",      "col-sep")}
     ${sortTh("day_change", "Day %")}
     ${sortTh("week_change","1W %")}
-    ${sortTh("year_change","52W %")}
-    ${sortTh("ath",        "52W Hi")}
+    ${sortTh("month_change","1M %")}
     ${sortTh("pct_52w",   "vs 52W")}
     <th class="col-sep" style="text-align:center">Score</th>
     <th style="text-align:left">Buy Target</th>
@@ -313,7 +306,6 @@ export function renderPortfolioTable(tickers) {
     return `<span class="${pctScoreColor(v, scale)}">${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%</span>`;
   };
   const fmtDay   = v => fmtPct(v, 0.03);
-  const fmtPrice = v => v != null ? `$${v.toFixed(2)}` : "—";
 
   const rows = sorted.map(ticker => {
     const pd      = state.portfolioData[ticker];
@@ -334,17 +326,16 @@ export function renderPortfolioTable(tickers) {
     const price      = pd?.price           ?? wd?.snapshot?.price;
     const dayChg     = pd?.day_change_pct  ?? wd?.snapshot?.day_change_pct;
     const ret1w      = pd?.return_1w       ?? wd?.returns?.ticker_return_1w;
-    const ret12m     = pd?.return_12m      ?? wd?.returns?.ticker_return_12m;
+    const ret1m      = pd?.return_1m       ?? wd?.returns?.ticker_return_1m;
     const ath        = wd?.snapshot?.week52_high ?? pd?.ath;
     const pct52w     = wd?.snapshot?.pct_from_52w_high ?? null;
     const refreshed  = pd ? timeAgo(pd.refreshed_at) : (wd?.refreshed_at ? timeAgo(wd.refreshed_at) : "—");
 
     const priceCells = `
-      <td class="col-sep" style="font-variant-numeric:tabular-nums">${fmtPrice(price)}</td>
+      <td class="col-sep">${fmt52wRangeHtml(price, wd?.snapshot?.week52_low, ath)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtDay(dayChg != null ? dayChg / 100 : null)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtPct(ret1w)}</td>
-      <td style="font-variant-numeric:tabular-nums">${fmtPct(ret12m)}</td>
-      <td style="font-variant-numeric:tabular-nums">${price != null && ath != null ? `$${ath.toFixed(2)}` : "—"}</td>
+      <td style="font-variant-numeric:tabular-nums">${fmtPct(ret1m, 0.25)}</td>
       <td style="font-variant-numeric:tabular-nums">${fmtPct(pct52w, 0.30)}</td>`;
 
     const avgCost   = holding.avg_cost;
