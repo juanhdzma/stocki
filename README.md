@@ -62,7 +62,7 @@ A row of cards at the top gives market context: **VIX** (with a calm→fear rang
 ## Reading the table
 
 **Scores (0–100)** — hover any for the full breakdown:
-- **Growth** — revenue/earnings trajectory. **Quality** — profitability, balance sheet, durability. **Insiders** — conviction-weighted buy/sell activity. **Sentiment** — FCF yield, valuation, analyst upside/conviction. **Long** — the weighted composite that drives the verdict.
+- **Growth** — revenue/earnings trajectory. **Quality** — profitability, balance sheet, durability. **Insiders** — conviction-weighted buy/sell activity. **Valuation** — how cheaply it trades: forward P/E, EV/EBITDA, PEG, and two sales multiples (P/S, EV/Sales), plus an analyst-upside bonus (high = cheap, low = expensive). **Long** — the weighted composite that drives the verdict.
 
 **Verdict** (per Long score): Strong Buy ≥80 · Buy ≥60 · Hold ≥40 · Sell ≥20 · Strong Sell <20.
 
