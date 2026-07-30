@@ -299,9 +299,18 @@ export function buildBuyTargetTooltip(ticker, d) {
   const sigTxt = isBuy ? "BUY" : "WAIT";
 
   const volPct = bt.vol != null ? ` avg ${(bt.vol * 100).toFixed(0)}%` : "";
-  const mosPct = (bt.mos * 100).toFixed(0);
+  const volMos = bt.vol_mos ?? bt.mos;
+  const volMosPct = (volMos * 100).toFixed(0);
   const volCls = { high: "s-red", mid: "s-yellow", low: "s-green", "n/a": "s-red" }[bt.vol_level] || "";
-  const volRow = `<div class="tt-sub-row"><span class="tt-sub-lbl">Volatility <span class="${volCls}">${bt.vol_level || "—"}</span>${volPct}</span><span class="tt-sub-val" style="margin-left:auto">${bt.mos > 0 ? `−${mosPct}%` : "no discount"}</span></div>`;
+  const volRow = `<div class="tt-sub-row"><span class="tt-sub-lbl">Volatility <span class="${volCls}">${bt.vol_level || "—"}</span>${volPct}</span><span class="tt-sub-val" style="margin-left:auto">${volMos > 0 ? `−${volMosPct}%` : "no discount"}</span></div>`;
+
+  const dispCls = { high: "s-red", mid: "s-yellow", low: "s-green" }[bt.disp_level] || "";
+  const dispPct = bt.disp != null ? ` ${(bt.disp * 100).toFixed(0)}% range` : "";
+  const dispMos = bt.disp_mos ?? 0;
+  const dispMosPct = (dispMos * 100).toFixed(0);
+  const dispRow = bt.disp_level && bt.disp_level !== "n/a"
+    ? `<div class="tt-sub-row"><span class="tt-sub-lbl">Dispersion <span class="${dispCls}">${bt.disp_level}</span>${dispPct}</span><span class="tt-sub-val" style="margin-left:auto">${dispMos > 0 ? `−${dispMosPct}%` : "no discount"}</span></div>`
+    : "";
 
   const vw = bt.vol_windows || {};
   const wins = ["1m", "6m", "12m"].filter(k => vw[k] != null);
@@ -323,12 +332,14 @@ export function buildBuyTargetTooltip(ticker, d) {
       ${row("Median ×0.2", $(bt.p50))}
       ${row("= p10 anchor", `<b>${$(bt.anchor)}</b>`)}`;
   } else {
+    const ddPct = bt.dd != null ? (bt.dd * 100).toFixed(0) : "−30";
     head = `
-      <div class="subtext" style="font-size:11px;margin-bottom:4px">Few analysts (${bt.analysts} &lt; 10) → 52-week-high rule</div>
-      ${row("52-week high", $(bt.week52_high))}
-      ${row(`${bt.dd != null ? (bt.dd * 100).toFixed(0) : "−30"}% = anchor`, `<b>${$(bt.anchor)}</b>`)}`;
+      <div class="subtext" style="font-size:11px;margin-bottom:4px">Few analysts (${bt.analysts} &lt; 10) → technical anchor (lower of)</div>
+      ${bt.week52_high != null ? row(`${ddPct}% off 52w-high`, $(bt.week52_high * (1 + (bt.dd ?? -0.3)))) : ""}
+      ${bt.sma200 != null ? row("200-day MA", $(bt.sma200)) : ""}
+      ${row(`= anchor (${bt.method === "ma200" ? "MA200" : "−30% zone"})`, `<b>${$(bt.anchor)}</b>`)}`;
   }
-  const body = `${head}${volRow}${winRow}${legend}${row("= Target", `<b>${$(bt.price)}</b>`)}`;
+  const body = `${head}${volRow}${dispRow}${winRow}${legend}${row("= Target", `<b>${$(bt.price)}</b>`)}`;
 
   const cmp = price != null
     ? `Price today ${$(price)} ${price <= bt.price ? "≤" : ">"} ${$(bt.price)}`

@@ -133,34 +133,51 @@ def _composite_long(
 
     # Trailing profitability/balance-sheet strength describes where a business has been,
     # not where it's going — a business with genuinely shrinking revenue shouldn't reach
-    # STRONG-BUY on quality alone, no matter how clean its margins or balance sheet are.
+    # STRONG on quality alone, no matter how clean its margins or balance sheet are.
     if _revenue_shrinking(fundamentals or []):
         score = min(score, 79.9)
 
     return {"score": score, "action": _action(score), "weights": weights_pct}
 
 
-# buy_target answers: buy now, or wait for a dip to $X? Two anchors, one shared volatility discount.
+# buy_target answers: buy now, or wait for a dip to $X? Two anchors, one stacked margin of safety.
 # Anchor: with ≥_BT_MIN_ANALYSTS covering it, the ~10th percentile of the analyst price-target
 # distribution (interpolated LOW→MEDIAN) — a conservative, outlier-robust level grounded in forward
 # fundamentals rather than a single 52-week-high print (which a momentum name's bubble peak makes
 # meaningless — SNDK ran 40→2354 in a year, so 80% of its high = $1888 was a nonsense "buy" above the
-# current price). With thin/absent coverage (~23% of names) it falls back to the −30%-off-52w-high
-# zone, an out-of-sample-validated mean-reversion entry (entry_lab.py: the deeper the trigger the
-# stronger the rebound — −30% off the high gave ~+19pp/6m vs ~+10pp for −20%, at 30% vs 43% coverage).
-# Either anchor is then discounted by a margin of safety keyed to how much the name moves
-# (realized_vol = the average of its 1m/6m/12m annualized realized vol, so a recent-only or year-long
-# spike alone can't dominate), in three discrete tiers — low/mid/high vol → 0/12/25% extra discount. A calm name
-# (AAPL ~25%) buys at the raw anchor; a wild one (SNDK ~110%) needs a 25%-deeper entry. Tried and
+# current price). With thin/absent coverage (~23% of names) it falls back to a technical anchor: the
+# LOWER (more conservative) of the −30%-off-52w-high zone (entry_lab.py: an out-of-sample-validated
+# mean-reversion entry — the deeper the trigger the stronger the rebound, −30% off the high gave
+# ~+19pp/6m vs ~+10pp for −20%) and the 200-day SMA (a real trend-support level, not an arbitrary %;
+# used as an anchor LEVEL, not the binary above/below-MA200 gate bt_lab found doesn't separate winners
+# from losers — beaten-down names rebound hardest). Falls back to whichever of the two is measurable.
+# Either anchor is then discounted by a margin of safety that STACKS two independent risk signals
+# (summed, capped at _BT_MOS_CAP): (1) how much the name moves — realized_vol = the average of its
+# 1m/6m/12m annualized realized vol, three discrete tiers low/mid/high → 0/12/25% (a calm AAPL ~25%
+# buys at the raw anchor; a wild SNDK ~110% needs 25% deeper), and (2) how much analysts DISAGREE —
+# the low→high spread over the median, tiers low/mid/high → 0/8/15%. High dispersion is the paper's
+# key finding (Palley/Steffen/Zhang, Mgmt Science 2025): a wide range doesn't make the consensus
+# merely noisier, its correlation with forward return flips NEGATIVE (stale post-bad-news targets
+# inflate it), so a wide range is a warning demanding a deeper entry, not an opportunity. Tried and
 # dropped: an analyst-count weighting (arbitrary; the percentile encodes conservatism directly) and a
 # momentum widener (double-counts with vol on the bubble names — bt_lab). NOT return-validated (analyst
 # targets aren't in a price-only backtest) — behavior-tuned; the knobs below are hand-picked.
-_BUY_TARGET_DEEP_DD = -0.30  # fallback drawdown from the 52w high when analyst targets aren't trusted
+_BUY_TARGET_DEEP_DD = (
+    -0.30
+)  # fallback drawdown from the 52w high when analyst targets aren't trusted
 _BT_MIN_ANALYSTS = 10  # below this, the target distribution is too thin to build a percentile from
 _BT_PERCENTILE = 0.10  # target the ~p10 of the analyst distribution: low + (p/0.5)*(median − low)
 _BT_VOL_MID = 0.40  # realized vol ≥ this → "mid" tier; below → "low"
 _BT_VOL_HIGH = 0.75  # realized vol ≥ this → "high" tier
 _BT_VOL_MOS = {"low": 0.0, "mid": 0.12, "high": 0.25}  # extra margin of safety per volatility tier
+# Analyst-target dispersion, measured as the low→high spread over the median. Palley/Steffen/Zhang
+# (Mgmt Science 2025): a WIDE spread doesn't just make the consensus noisier — its correlation with
+# forward return flips negative (stale, un-revised targets inflate it after bad news). So a wide
+# range is a warning, not an opportunity: demand a deeper entry. This discount stacks on the vol one.
+_BT_DISP_MID = 0.40  # (high−low)/median ≥ this → "mid" dispersion; below → "low"
+_BT_DISP_HIGH = 0.80  # ≥ this → "high" dispersion
+_BT_DISP_MOS = {"low": 0.0, "mid": 0.08, "high": 0.15}  # extra margin of safety per dispersion tier
+_BT_MOS_CAP = 0.35  # total margin of safety (vol + dispersion) is capped here
 
 
 def _vol_tier(vol: float | None) -> tuple[str, float]:
@@ -175,38 +192,87 @@ def _vol_tier(vol: float | None) -> tuple[str, float]:
     return "low", _BT_VOL_MOS["low"]
 
 
+def _disp_tier(disp: float | None) -> tuple[str, float]:
+    """Discrete analyst-dispersion level + its extra margin-of-safety discount. Unmeasurable spread
+    (no high/low reported) is NOT punished — it's absence of a warning, not the high-risk signal an
+    unmeasurable *vol* is: return a 0% discount, unlike _vol_tier's conservative default."""
+    if disp is None:
+        return "n/a", 0.0
+    if disp >= _BT_DISP_HIGH:
+        return "high", _BT_DISP_MOS["high"]
+    if disp >= _BT_DISP_MID:
+        return "mid", _BT_DISP_MOS["mid"]
+    return "low", _BT_DISP_MOS["low"]
+
+
 def _buy_target(snapshot: dict) -> dict | None:
     price = snapshot.get("price")
     if not price:
         return None
 
     vol = snapshot.get("realized_vol")
-    vol_level, mos = _vol_tier(vol)
+    vol_level, vol_mos = _vol_tier(vol)
 
     low = snapshot.get("target_low")
-    p50 = snapshot.get("target_median") or snapshot.get("target_mean")  # true p50, mean as a fallback
+    high = snapshot.get("target_high")
+    p50 = snapshot.get("target_median") or snapshot.get(
+        "target_mean"
+    )  # true p50, mean as a fallback
     nac = int(snapshot.get("analyst_count") or 0)
+    sma200 = (snapshot.get("moving_averages") or {}).get("200")
+
+    disp = None
+    disp_level, disp_mos = "n/a", 0.0
     if nac >= _BT_MIN_ANALYSTS and low and low > 0 and p50 and p50 > 0:
         anchor = low + (_BT_PERCENTILE / 0.5) * (p50 - low)  # interpolate the low percentile p0→p50
-        detail = {"method": "p10", "analysts": nac, "low": round(low, 2), "p50": round(p50, 2)}
+        if high and high > 0:
+            disp = (high - low) / p50  # relative low→high spread — drives the dispersion discount
+            disp_level, disp_mos = _disp_tier(disp)
+        detail = {
+            "method": "p10",
+            "analysts": nac,
+            "low": round(low, 2),
+            "p50": round(p50, 2),
+            "high": round(high, 2) if high else None,
+            "disp": round(disp, 3) if disp is not None else None,
+            "disp_level": disp_level,
+        }
     else:
         w52h = snapshot.get("week52_high")
-        if not w52h or w52h <= 0:
+        dd_anchor = w52h * (1 + _BUY_TARGET_DEEP_DD) if (w52h and w52h > 0) else None
+        # MA200 is a real trend-support level; take the more conservative (lower) of it and the
+        # −30%-off-52w-high zone. Falls back to whichever is present when only one is measurable.
+        candidates = [x for x in (dd_anchor, sma200) if x and x > 0]
+        if not candidates:
             return None
-        anchor = w52h * (1 + _BUY_TARGET_DEEP_DD)
-        detail = {"method": "drawdown", "analysts": nac, "week52_high": round(w52h, 2), "dd": _BUY_TARGET_DEEP_DD}
+        anchor = min(candidates)
+        method = "ma200" if (sma200 and anchor == sma200) else "drawdown"
+        detail = {
+            "method": method,
+            "analysts": nac,
+            "dd": _BUY_TARGET_DEEP_DD,
+            "week52_high": round(w52h, 2) if (w52h and w52h > 0) else None,
+            "sma200": round(sma200, 2) if sma200 else None,
+        }
 
-    target = anchor * (1 - mos)  # same volatility discount on either anchor
+    mos = min(_BT_MOS_CAP, vol_mos + disp_mos)  # vol + dispersion discounts stack, capped
+    target = anchor * (1 - mos)
     vw = snapshot.get("realized_vol_windows") or {}
-    detail.update({
-        "anchor": round(anchor, 2),
-        "vol": round(vol, 4) if vol else None,  # average of the windows — drives the tier
-        "vol_windows": {k: round(v, 4) for k, v in vw.items()},
-        "vol_level": vol_level,
-        "vol_mid": _BT_VOL_MID,
-        "vol_high": _BT_VOL_HIGH,
-        "mos": round(mos, 4),
-    })
+    detail.update(
+        {
+            "anchor": round(anchor, 2),
+            "vol": round(vol, 4) if vol else None,  # average of the windows — drives the tier
+            "vol_windows": {k: round(v, 4) for k, v in vw.items()},
+            "vol_level": vol_level,
+            "vol_mos": round(vol_mos, 4),
+            "disp_mos": round(disp_mos, 4),
+            "vol_mid": _BT_VOL_MID,
+            "vol_high": _BT_VOL_HIGH,
+            "disp_mid": _BT_DISP_MID,
+            "disp_high": _BT_DISP_HIGH,
+            "mos": round(mos, 4),
+        }
+    )
 
     return {
         "price": round(target, 2),

@@ -267,6 +267,22 @@ _VOL_MIN_OBS = 20  # min closes for a trustworthy annualized stdev: below ~1 mon
 # tiny sample amplifies noise into absurd numbers (SKHY, 12 days → 183%), so return None → "n/d" tier
 
 
+def _closes_series(ticker: str, hist: pd.DataFrame | None = None) -> pd.Series | None:
+    """Adjusted daily closes for `ticker`: from the shared bulk `hist` if given, else a 1y download.
+    Returns None only when a standalone download comes back empty (bulk-hist misses → empty Series)."""
+    if hist is not None and not hist.empty:
+        closes_all = hist["Close"]
+        closes = closes_all[ticker] if ticker in closes_all.columns else pd.Series(dtype=float)
+        return closes.dropna()
+    raw = yf.download(ticker, period="1y", interval="1d", auto_adjust=True, progress=False)
+    if raw.empty:
+        return None
+    closes = raw["Close"]
+    if isinstance(closes, pd.DataFrame):
+        closes = closes[ticker] if ticker in closes.columns else closes.iloc[:, 0]
+    return closes.dropna()
+
+
 def _compute_realized_vol(ticker: str, hist: pd.DataFrame | None = None) -> dict[str, float] | None:
     """Annualized realized volatility (stdev of daily returns) over 1m/6m/12m windows → dict.
 
@@ -275,19 +291,9 @@ def _compute_realized_vol(ticker: str, hist: pd.DataFrame | None = None) -> dict
     that matter (recent spinoffs/IPOs like SNDK), so this is used instead.
     """
     try:
-        if hist is not None and not hist.empty:
-            closes_all = hist["Close"]
-            closes = closes_all[ticker] if ticker in closes_all.columns else pd.Series(dtype=float)
-            closes = closes.dropna()
-        else:
-            raw = yf.download(ticker, period="1y", interval="1d", auto_adjust=True, progress=False)
-            if raw.empty:
-                return None
-            closes = raw["Close"]
-            if isinstance(closes, pd.DataFrame):
-                closes = closes[ticker] if ticker in closes.columns else closes.iloc[:, 0]
-            closes = closes.dropna()
-
+        closes = _closes_series(ticker, hist)
+        if closes is None:
+            return None
         c = closes.to_numpy()
         if len(c) < _VOL_MIN_OBS:
             return None
@@ -301,6 +307,30 @@ def _compute_realized_vol(ticker: str, hist: pd.DataFrame | None = None) -> dict
         return out or None
     except Exception as exc:
         log.debug("[%s] realized-vol computation failed: %s", ticker, exc)
+        return None
+
+
+_SMA_WINDOWS = {"50": 50, "200": 200}  # trading days per moving average
+
+
+def _compute_moving_averages(
+    ticker: str, hist: pd.DataFrame | None = None
+) -> dict[str, float] | None:
+    """Simple moving averages (50/200-day) of adjusted close → {window: sma}.
+
+    A trend-support price level for buy_target's thin-analyst fallback anchor — a price-based
+    level that, unlike analyst targets, carries no systematic upward bias. A window is emitted
+    only when there are at least that many closes (SMA200 needs ~a full year of history).
+    """
+    try:
+        closes = _closes_series(ticker, hist)
+        if closes is None:
+            return None
+        c = closes.to_numpy()
+        out = {name: float(np.mean(c[-w:])) for name, w in _SMA_WINDOWS.items() if len(c) >= w}
+        return out or None
+    except Exception as exc:
+        log.debug("[%s] moving-average computation failed: %s", ticker, exc)
         return None
 
 
@@ -449,6 +479,7 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         if realized_vol_windows
         else None
     )
+    moving_averages = _compute_moving_averages(ticker, hist)
 
     # Price sanity: a spurious quote (split-mismatch, bad tick) deviates wildly from the prior
     # close. Flag it so scores built on it can be treated with suspicion instead of silently
@@ -477,6 +508,7 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "pct_from_1w_high": pct_from_1w_high,
         "realized_vol": realized_vol,
         "realized_vol_windows": realized_vol_windows,
+        "moving_averages": moving_averages,
         "day_change_pct": day_change_pct,
         "ath": ath,
         "beta": _f(info.get("beta")),

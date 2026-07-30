@@ -863,7 +863,12 @@ def test_ev_sales_gives_pre_profit_names_a_valuation():
     sales-based multiples rather than a null axis — EV/Sales applies without earnings."""
     from core.scorers.price_long import score
 
-    snap = {"ev_to_revenue": 1.5, "revenue_growth": 0.5, "price_to_sales": None, "forward_pe": -10.0}
+    snap = {
+        "ev_to_revenue": 1.5,
+        "revenue_growth": 0.5,
+        "price_to_sales": None,
+        "forward_pe": -10.0,
+    }
     result = score([], snap)
     assert result["sub_scores"]["ev_sales"] == 6.0  # 1.5 / 1.5 = 1.0 adj -> cheap tier
     assert result["sub_scores"]["fwd_pe"] is None  # pre-profit: no earnings multiple
@@ -1137,7 +1142,7 @@ def test_estimate_revisions_none_on_currency_mismatch():
     assert result["sub_scores"]["estimate_revisions"] is None
 
 
-# ── composite_long: declining revenue caps out STRONG-BUY ────────────────────────
+# ── composite_long: declining revenue caps out STRONG ────────────────────────
 
 
 def test_composite_long_caps_below_strong_buy_when_revenue_declining():
@@ -1256,12 +1261,20 @@ def test_buy_target_p10_anchor_widened_by_vol_tiers():
 
     # p10 anchor = low + (0.10/0.5)*(median - low) = 100 + 0.2*(200-100) = 120.
     def bt(vol):
-        return _buy_target(_bt_snap(105.0, high_52w=300.0, target_low=100.0, target_median=200.0,
-                                    analyst_count=15, realized_vol=vol))
+        return _buy_target(
+            _bt_snap(
+                105.0,
+                high_52w=300.0,
+                target_low=100.0,
+                target_median=200.0,
+                analyst_count=15,
+                realized_vol=vol,
+            )
+        )
 
-    assert bt(0.30)["vol_level"] == "low" and bt(0.30)["price"] == 120.0   # no discount
-    assert bt(0.50)["vol_level"] == "mid" and bt(0.50)["price"] == 105.6   # 120*0.88
-    assert bt(0.90)["vol_level"] == "high" and bt(0.90)["price"] == 90.0   # 120*0.75
+    assert bt(0.30)["vol_level"] == "low" and bt(0.30)["price"] == 120.0  # no discount
+    assert bt(0.50)["vol_level"] == "mid" and bt(0.50)["price"] == 105.6  # 120*0.88
+    assert bt(0.90)["vol_level"] == "high" and bt(0.90)["price"] == 90.0  # 120*0.75
     assert bt(0.30)["signal"] == "buy" and bt(0.90)["signal"] == "wait"
 
 
@@ -1269,8 +1282,16 @@ def test_buy_target_p50_falls_back_to_mean_without_median():
     from core.scorers.composite import _buy_target
 
     # no median -> mean stands in as p50: 100 + 0.2*(200-100) = 120 (baja vol -> no discount).
-    bt = _buy_target(_bt_snap(105.0, high_52w=300.0, target_low=100.0, target_mean=200.0,
-                              analyst_count=15, realized_vol=0.30))
+    bt = _buy_target(
+        _bt_snap(
+            105.0,
+            high_52w=300.0,
+            target_low=100.0,
+            target_mean=200.0,
+            analyst_count=15,
+            realized_vol=0.30,
+        )
+    )
     assert bt["price"] == 120.0
 
 
@@ -1278,8 +1299,16 @@ def test_buy_target_thin_coverage_falls_back_to_drawdown():
     from core.scorers.composite import _buy_target
 
     # rich targets but <10 analysts -> distribution too thin -> ignore it, use the drawdown zone.
-    bt = _buy_target(_bt_snap(95.0, high_52w=100.0, target_low=100.0, target_median=200.0,
-                              analyst_count=5, realized_vol=0.30))
+    bt = _buy_target(
+        _bt_snap(
+            95.0,
+            high_52w=100.0,
+            target_low=100.0,
+            target_median=200.0,
+            analyst_count=5,
+            realized_vol=0.30,
+        )
+    )
     assert bt["method"] == "drawdown"
     assert bt["price"] == 70.0  # w52*0.70, not the p10 anchor
     assert bt["signal"] == "wait"
@@ -1330,13 +1359,21 @@ def test_is_expensive_needs_two_signals():
     from core.scorers.composite import _is_expensive
 
     # profitable & rich on BOTH forward earnings and growth-adjusted sales -> expensive.
-    assert _is_expensive({"forward_pe": 40.0, "price_to_sales": 15.0, "revenue_growth": 0.0}) is True
+    assert (
+        _is_expensive({"forward_pe": 40.0, "price_to_sales": 15.0, "revenue_growth": 0.0}) is True
+    )
     # cheap forward P/E -> not expensive no matter the sales multiple (NVO case).
-    assert _is_expensive({"forward_pe": 15.6, "price_to_sales": 30.0, "revenue_growth": 0.0}) is False
+    assert (
+        _is_expensive({"forward_pe": 15.6, "price_to_sales": 30.0, "revenue_growth": 0.0}) is False
+    )
     # depressed earnings: high P/E but ordinary sales multiple -> only one signal -> not expensive.
-    assert _is_expensive({"forward_pe": 45.0, "price_to_sales": 3.0, "revenue_growth": 0.0}) is False
+    assert (
+        _is_expensive({"forward_pe": 45.0, "price_to_sales": 3.0, "revenue_growth": 0.0}) is False
+    )
     # fat margins: rich sales but ordinary P/E -> only one signal -> not expensive (TXN case).
-    assert _is_expensive({"forward_pe": 25.0, "price_to_sales": 15.0, "revenue_growth": 0.0}) is False
+    assert (
+        _is_expensive({"forward_pe": 25.0, "price_to_sales": 15.0, "revenue_growth": 0.0}) is False
+    )
     # pre-profit (no positive P/E): a high RAW sales multiple is the tell.
     assert _is_expensive({"forward_pe": None, "price_to_sales": 25.0}) is True
     assert _is_expensive({"forward_pe": -8.0, "price_to_sales": 5.0}) is False
@@ -1614,3 +1651,64 @@ def test_cyclical_surge_earnings_trough_needs_positive_latest():
         for rev, eb in [(12.0, -0.5), (9.5, 0.5), (10.0, 0.6), (11.0, 1.25)]
     ]  # newest first, latest ebit < 0
     assert _is_cyclical_surge(ann, {"revenue_growth": 0.24, "operating_margin": 0.02}) is False
+
+
+def test_buy_target_high_dispersion_deepens_the_entry():
+    """A wide analyst low→high spread (Palley/Steffen/Zhang: high dispersion flips the consensus
+    negative) stacks an extra margin-of-safety discount on top of the vol one — a lower target."""
+    from core.scorers.composite import _buy_target
+
+    base = {
+        "price": 100.0,
+        "realized_vol": 0.30,
+        "analyst_count": 20,
+        "target_low": 80.0,
+        "target_median": 120.0,
+    }
+    tight = _buy_target({**base, "target_high": 130.0})  # (130-80)/120 ≈ 0.42 → mid
+    wide = _buy_target({**base, "target_high": 220.0})  # (220-80)/120 ≈ 1.17 → high
+    assert tight["disp_level"] == "mid" and wide["disp_level"] == "high"
+    assert wide["price"] < tight["price"]  # more disagreement → deeper entry
+
+
+def test_buy_target_mos_is_capped():
+    """vol + dispersion discounts stack but can't exceed the cap, so the target never collapses."""
+    from core.scorers.composite import _BT_MOS_CAP, _buy_target
+
+    bt = _buy_target(
+        {
+            "price": 100.0,
+            "realized_vol": 0.90,
+            "analyst_count": 15,
+            "target_low": 80.0,
+            "target_median": 120.0,
+            "target_high": 300.0,
+        }
+    )
+    assert bt["mos"] == _BT_MOS_CAP  # high vol (0.25) + high disp (0.15) = 0.40, capped to 0.35
+
+
+def test_buy_target_thin_analysts_uses_ma200_when_below_drawdown():
+    """<10 analysts → technical anchor = lower of the −30%-off-high zone and the 200-day MA."""
+    from core.scorers.composite import _buy_target
+
+    snap = {
+        "price": 100.0,
+        "realized_vol": 0.30,
+        "analyst_count": 3,
+        "week52_high": 150.0,
+        "moving_averages": {"200": 90.0},
+    }
+    bt = _buy_target(snap)
+    # −30% off 150 = 105; MA200 = 90 is lower → MA200 wins
+    assert bt["method"] == "ma200" and bt["anchor"] == 90.0
+
+
+def test_buy_target_thin_analysts_falls_back_to_drawdown_without_ma():
+    """No MA200 available (thin history) → the −30%-off-52w-high rule still applies unchanged."""
+    from core.scorers.composite import _buy_target
+
+    bt = _buy_target(
+        {"price": 100.0, "realized_vol": 0.30, "analyst_count": 3, "week52_high": 150.0}
+    )
+    assert bt["method"] == "drawdown" and bt["anchor"] == 105.0
