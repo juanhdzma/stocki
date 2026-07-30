@@ -597,30 +597,6 @@ def fetch_grade_history(ticker: str) -> list[dict]:
         return []
 
 
-def fetch_portfolio_price(ticker: str, hist: pd.DataFrame | None = None) -> dict:
-    """Lightweight price-only fetch for portfolio. No fundamentals, no scores."""
-    info = yf.Ticker(ticker).info or {}
-    price = _f(info.get("currentPrice") or info.get("regularMarketPrice"))
-    day_change_pct = _f(info.get("regularMarketChangePercent"))
-    return_12m = _f(info.get("52WeekChange") or info.get("fiftyTwoWeekChange"))
-
-    return_1w = None
-    if hist is not None and not hist.empty and ticker in hist["Close"].columns:
-        try:
-            closes = hist["Close"][ticker].dropna()
-            if len(closes) > 5:
-                return_1w = float((closes.iloc[-1] - closes.iloc[-6]) / closes.iloc[-6])
-        except Exception:
-            pass
-
-    return {
-        "price": price,
-        "day_change_pct": day_change_pct,
-        "return_1w": return_1w,
-        "return_12m": return_12m,
-    }
-
-
 def fetch_fundamentals(ticker: str) -> list[tuple[str, dict]]:
     """Returns list of (period_key, data) ready for write_fundamentals()."""
     t = yf.Ticker(ticker)

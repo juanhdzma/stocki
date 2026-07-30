@@ -15,34 +15,24 @@ from db.cache import (
     read_all_fundamentals_batch,
     read_score_history_reference_batch,
 )
-from db.models import MarketSnapshot, PortfolioHolding, Watchlist
+from db.models import MarketSnapshot, Watchlist
 from util import today_and_week_ago, utcnow_iso
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
+_LIST_TYPES = ("watchlist", "favorite")
+
 
 @router.get("/lists")
 async def get_lists(session: AsyncSession = Depends(get_session)):
-    wl_result = await session.execute(
-        select(Watchlist.ticker)
-        .where(Watchlist.list_type == "watchlist")
-        .order_by(Watchlist.added_at.asc())
+    result = await session.execute(
+        select(Watchlist.ticker, Watchlist.list_type).order_by(Watchlist.added_at.asc())
     )
-    watchlist_tickers = [r[0] for r in wl_result.all()]
-
-    pf_result = await session.execute(
-        select(PortfolioHolding).order_by(PortfolioHolding.added_at.asc())
-    )
-    pf_rows = pf_result.scalars().all()
-
-    return {
-        "watchlist": watchlist_tickers,
-        "portfolio": [r.ticker for r in pf_rows],
-        "portfolio_holdings": {
-            r.ticker: {"avg_cost": r.avg_cost, "shares": r.shares} for r in pf_rows
-        },
-    }
+    watchlist_tickers, favorites = [], []
+    for ticker, list_type in result.all():
+        (favorites if list_type == "favorite" else watchlist_tickers).append(ticker)
+    return {"watchlist": watchlist_tickers, "favorites": favorites}
 
 
 @router.post("/lists/import")
@@ -54,7 +44,6 @@ async def import_tickers(
     if not valid:
         raise HTTPException(status_code=400, detail="No valid tickers")
     await session.execute(delete(Watchlist))
-    await session.execute(delete(PortfolioHolding))
     now = utcnow_iso()
     for t in valid:
         stmt = (
@@ -75,22 +64,14 @@ async def add_ticker(
     ticker = ticker.upper()
     if not _TICKER_RE.match(ticker):
         raise HTTPException(status_code=400, detail="Invalid ticker")
-    if list_type not in ("watchlist", "portfolio"):
-        raise HTTPException(status_code=400, detail="list_type must be watchlist or portfolio")
-    now = utcnow_iso()
+    if list_type not in _LIST_TYPES:
+        raise HTTPException(status_code=400, detail="list_type must be watchlist or favorite")
     stmt = (
         pg_insert(Watchlist)
-        .values(ticker=ticker, list_type="watchlist", added_at=now)
+        .values(ticker=ticker, list_type=list_type, added_at=utcnow_iso())
         .on_conflict_do_nothing()
     )
     await session.execute(stmt)
-    if list_type == "portfolio":
-        stmt = (
-            pg_insert(PortfolioHolding)
-            .values(ticker=ticker, avg_cost=None, shares=None, added_at=now)
-            .on_conflict_do_nothing()
-        )
-        await session.execute(stmt)
     await session.commit()
     return {"ok": True}
 
@@ -101,7 +82,6 @@ async def remove_ticker(ticker: str, session: AsyncSession = Depends(get_session
     if not _TICKER_RE.match(ticker):
         raise HTTPException(status_code=400, detail="Invalid ticker")
     await session.execute(delete(Watchlist).where(Watchlist.ticker == ticker))
-    await session.execute(delete(PortfolioHolding).where(PortfolioHolding.ticker == ticker))
     await session.commit()
     return {"ok": True}
 
@@ -111,41 +91,13 @@ async def move_ticker(ticker: str, list_type: str, session: AsyncSession = Depen
     ticker = ticker.upper()
     if not _TICKER_RE.match(ticker):
         raise HTTPException(status_code=400, detail="Invalid ticker")
-    if list_type not in ("watchlist", "portfolio"):
-        raise HTTPException(status_code=400, detail="list_type must be watchlist or portfolio")
-    if list_type == "portfolio":
-        stmt = (
-            pg_insert(PortfolioHolding)
-            .values(ticker=ticker, avg_cost=None, shares=None, added_at=utcnow_iso())
-            .on_conflict_do_nothing()
-        )
-        await session.execute(stmt)
-    else:
-        await session.execute(delete(PortfolioHolding).where(PortfolioHolding.ticker == ticker))
-    await session.commit()
-    return {"ok": True}
-
-
-@router.patch("/portfolio/{ticker}/holding")
-async def update_holding(
-    ticker: str,
-    data: dict = Body(...),
-    session: AsyncSession = Depends(get_session),
-):
-    ticker = ticker.upper()
-    if not _TICKER_RE.match(ticker):
-        raise HTTPException(status_code=400, detail="Invalid ticker")
-    avg_cost = data.get("avg_cost")
-    shares = data.get("shares")
-    stmt = (
-        pg_insert(PortfolioHolding)
-        .values(ticker=ticker, avg_cost=avg_cost, shares=shares, added_at=utcnow_iso())
-        .on_conflict_do_update(
-            index_elements=["ticker"],
-            set_={"avg_cost": avg_cost, "shares": shares},
-        )
+    if list_type not in _LIST_TYPES:
+        raise HTTPException(status_code=400, detail="list_type must be watchlist or favorite")
+    await session.execute(
+        pg_insert(Watchlist)
+        .values(ticker=ticker, list_type=list_type, added_at=utcnow_iso())
+        .on_conflict_do_update(index_elements=["ticker"], set_={"list_type": list_type})
     )
-    await session.execute(stmt)
     await session.commit()
     return {"ok": True}
 

@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
-Personal stock watchlist + portfolio tracker. Fetches fundamentals, market data, and insider transactions; computes composite scores; displays everything in a single-page table with tooltips.
+Personal stock watchlist tracker (with a starred "favorites" subset). Fetches fundamentals, market data, and insider transactions; computes composite scores; displays everything in a single-page table with tooltips.
 
 ## Stack
 - **Backend**: FastAPI + asyncpg + SQLAlchemy (async), Python 3.12
@@ -41,12 +41,11 @@ Lint/format is `ruff` (config in `pyproject.toml`): `python3 -m ruff check .` an
 api/
   main.py                  # FastAPI app, mounts routers, serves static/index.html with cache-busted asset URLs
   routers/
-    watchlist.py           # GET /api/watchlist, /api/lists, PATCH/POST/DELETE
-    portfolio.py           # GET /api/portfolio/prices
+    watchlist.py           # GET /api/watchlist, /api/lists (watchlist+favorites), PATCH/POST/DELETE
     refresh.py             # POST /api/refresh
     lookup.py              # ticker search
     status.py, system.py
-    _payload.py            # build_payload() — shared snapshot+fundamentals+scores response shape used by watchlist/portfolio/lookup
+    _payload.py            # build_payload() — shared snapshot+fundamentals+scores response shape used by watchlist/lookup
 core/
   insider_score.py         # compute_insider_score() — full insider conviction logic
   fetchers/
@@ -62,14 +61,14 @@ db/
   models.py                # SQLAlchemy ORM: MarketSnapshot, Watchlist, etc.
   cache.py                 # DB read/write helpers
 scheduler/
-  worker.py                # refresh orchestration: refresh_one()/refresh_all()/refresh_portfolio_prices() + spawn_background(). NOT a running scheduler — see note below
+  worker.py                # refresh orchestration: refresh_one()/refresh_all() + spawn_background(). NOT a running scheduler — see note below
 static/
   js/                      # frontend as native ES modules (loaded via <script type="module" src="js/main.js">)
     state.js               # shared mutable `state` object (module imports are read-only, so cross-module state is routed through it)
     format.js colors.js    # pure formatters / score-color + badge helpers
     overlay.js charts.js   # tooltip positioning / all SVG charts
     tooltips.js cards.js    # hover+score tooltips / detail-view render pipeline
-    tables.js api.js        # watchlist+portfolio tables / fetch wrappers
+    tables.js api.js        # watchlist+favorites tables / fetch wrappers
     main.js                # stateful glue: handlers, router, window.* exports, bootstrap
   style.css
   index.html
@@ -189,14 +188,10 @@ Returns `{price, pct_from_current, signal, …breakdown}` where `signal` is `"bu
 
 **Fetch-status symbol** (one per row): `✓` ok · `⟳` in progress · `✕` a fetch failed · `·` pending/partial.
 
-**Portfolio only**: `⚠` next to Diff = holding is in profit but the verdict decayed to HOLD/SELL (thesis rotted).
-
 ## DB tables
 - `market_snapshot` — one row per ticker, `data_json` holds price + fundamentals + insider transactions + scores
-- `watchlist` — tickers with `list_type` (watchlist | portfolio)
+- `watchlist` — tickers with `list_type` (`watchlist` | `favorite`). Favorites are a starred subset surfaced in a separate top section — no holdings/P&L, just the same scored table. (Portfolio holdings/P&L were removed; `init_db` migrated any prior `portfolio_holdings` rows to `favorite` and dropped the `portfolio_holdings`/`portfolio_prices` tables.)
 - `fundamentals_history` — quarterly fundamentals per ticker
-- `portfolio_holdings` — avg_cost + shares per ticker
-- `portfolio_prices` — cached price data for P&L
 - `fetch_timestamps` — per-ticker, per-data-type last fetch time
 
 ## API conventions
@@ -206,13 +201,12 @@ Returns `{price, pct_from_current, signal, …breakdown}` where `signal` is `"bu
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/lists` | All tickers with their list type (watchlist / portfolio) |
-| `POST` | `/api/lists/{ticker}` | Add a ticker (`?list_type=watchlist\|portfolio`) |
+| `GET` | `/api/lists` | Tickers split into `{watchlist, favorites}` by `list_type` |
+| `POST` | `/api/lists/{ticker}` | Add a ticker (`?list_type=watchlist\|favorite`) |
 | `DELETE` | `/api/lists/{ticker}` | Remove a ticker |
-| `PATCH` | `/api/lists/{ticker}` | Move a ticker between lists (`?list_type=...`) |
+| `PATCH` | `/api/lists/{ticker}` | Star/unstar — move between watchlist and favorite (`?list_type=...`) |
 | `POST` | `/api/lists/import` | Replace all tickers (JSON array of strings) |
 | `GET` | `/api/watchlist` | Scored data for a comma-separated list of tickers |
-| `GET` | `/api/portfolio` | Scored data for all portfolio tickers |
 | `GET` | `/api/lookup/{ticker}` | Live fetch + cache for a single ticker |
 | `POST` | `/api/refresh` | Trigger background refresh for all tickers |
 | `POST` | `/api/refresh/{ticker}` | Trigger refresh for a single ticker |

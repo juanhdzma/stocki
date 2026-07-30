@@ -1,6 +1,6 @@
 import { state } from "./state.js";
 import { timeAgo } from "./format.js";
-import { _toggleSort, renderTickerTable, renderPortfolioTable } from "./tables.js";
+import { _toggleSort, renderTickerTable } from "./tables.js";
 import { render, loadPriceTrend } from "./cards.js";
 import { buildScoreTooltip, buildDeltaTooltip, buildBuyTargetTooltip } from "./tooltips.js";
 import { showOverlay, hideTooltip } from "./overlay.js";
@@ -11,15 +11,7 @@ async function loadLists() {
   const res = await fetch("/api/lists");
   const data = await res.json();
   state.watchlist = data.watchlist;
-  state.portfolio = data.portfolio;
-  state.portfolioHoldings = data.portfolio_holdings || {};
-}
-
-function setPfSort(col) {
-  [state.pfSortCol, state.pfSortDir] = _toggleSort(state.pfSortCol, state.pfSortDir, col);
-  sessionStorage.setItem("pfSortCol", state.pfSortCol);
-  sessionStorage.setItem("pfSortDir", state.pfSortDir);
-  renderHomeSections();
+  state.favorites = data.favorites || [];
 }
 
 function setWlSort(col) {
@@ -87,53 +79,26 @@ function renderWlFilterBar() {
   </div>`;
 }
 
-function editHolding(ticker) {
-  state.editingTicker = ticker;
-  renderHomeSections();
-}
-
-async function saveHolding(ticker) {
-  const avgCostEl = document.getElementById(`pf-avgcost-${ticker}`);
-  const sharesEl  = document.getElementById(`pf-shares-${ticker}`);
-  const avg_cost  = avgCostEl && avgCostEl.value !== "" ? parseFloat(avgCostEl.value) : null;
-  const shares    = sharesEl && sharesEl.value !== "" ? parseFloat(sharesEl.value) : null;
-  await fetch(`/api/portfolio/${ticker}/holding`, {
-    method: "PATCH",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({avg_cost, shares}),
-  });
-  state.portfolioHoldings[ticker] = {avg_cost, shares};
-  state.editingTicker = null;
-  renderHomeSections();
-}
-
-function cancelEdit() {
-  state.editingTicker = null;
-  renderHomeSections();
+function rowActions(t) {
+  const fav = state.favorites.includes(t);
+  return `<button class="btn-star${fav ? " starred" : ""}" title="${fav ? "Remove from favorites" : "Add to favorites"}" onclick="toggleFavorite('${t}')">${fav ? "★" : "☆"}</button>
+    <button class="btn-remove" onclick="removeTicker('${t}')">✕</button>`;
 }
 
 function renderHomeSections() {
   const dash = document.getElementById("dashboard");
 
-  if (!state.portfolio.length && !state.watchlist.length) {
+  if (!state.favorites.length && !state.watchlist.length) {
     dash.innerHTML = `<p class="subtext center" style="margin-top:60px">Add a ticker above to start.</p>`;
     return;
   }
 
   let html = renderMarketBar(state.market, state.watchlistData, state.homeLoadedAt);
 
-  if (state.portfolio.length) {
-    const pfTotal = state.portfolio.reduce((sum, t) => {
-      const price  = state.portfolioData[t]?.price ?? state.watchlistData[t]?.snapshot?.price;
-      const shares = state.portfolioHoldings[t]?.shares;
-      return (price != null && shares != null) ? sum + price * shares : sum;
-    }, 0);
-    const pfTotalStr = pfTotal > 0
-      ? `$${pfTotal.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
-      : "";
+  if (state.favorites.length) {
     html += `<section class="cat-section watchlist-section">
-      <h2>Portfolio ${pfTotalStr ? `<span class="pf-total-badge">${pfTotalStr}</span>` : ""}</h2>
-      ${renderPortfolioTable(state.portfolio)}
+      <h2>★ Favorites <span class="subtext" style="font-size:13px;font-weight:400">${state.favorites.length}</span></h2>
+      ${renderTickerTable(state.favorites, state.wlSortCol, state.wlSortDir, "setWlSort", rowActions)}
     </section>`;
   }
 
@@ -143,13 +108,7 @@ function renderHomeSections() {
       <h2>Watchlist <span class="subtext" style="font-size:13px;font-weight:400">${wlTickers.length}/${state.watchlist.length}</span></h2>
       ${renderWlFilterBar()}
       ${wlTickers.length
-        ? renderTickerTable(wlTickers, state.wlSortCol, state.wlSortDir, "setWlSort",
-          t => `${!state.portfolio.includes(t)
-            ? `<button class="btn-move" title="Add to portfolio" onclick="moveToPortfolio('${t}')">↑ PF</button>`
-            : ""}
-                <button class="btn-remove" onclick="removeTicker('${t}')">✕</button>`,
-          false
-        )
+        ? renderTickerTable(wlTickers, state.wlSortCol, state.wlSortDir, "setWlSort", rowActions)
         : `<p class="subtext center" style="margin:24px 0">No results for this filter.</p>`}
     </section>`;
   }
@@ -174,24 +133,20 @@ async function showHome() {
 
   try { await loadLists(); } catch (e) { console.error("Failed to load lists:", e); }
 
-  const allTickers = [...new Set([...state.portfolio, ...state.watchlist])];
+  const allTickers = [...new Set([...state.favorites, ...state.watchlist])];
   if (!allTickers.length) {
     dash.innerHTML = `<p class="subtext center" style="margin-top:60px">Add a ticker above to start.</p>`;
     return;
   }
 
   try {
-    const [wlRes, pfRes, stRes, mkRes] = await Promise.all([
+    const [wlRes, stRes, mkRes] = await Promise.all([
       fetch("/api/watchlist?tickers=" + allTickers.join(",")),
-      fetch("/api/portfolio/prices"),
       fetch("/api/status?tickers="   + allTickers.join(",")),
       fetch("/api/market").catch(() => null),
     ]);
     state.watchlistData = await wlRes.json();
     state.tickerStatus  = await stRes.json();
-    const pfRaw   = await pfRes.json();
-    const { _running, ...pfPrices } = pfRaw;
-    state.portfolioData = pfPrices;
     if (mkRes && mkRes.ok) state.market = await mkRes.json();
     state.homeLoadedAt = new Date().toISOString();
   } catch (e) {
@@ -206,7 +161,7 @@ async function handleAddTicker() {
   if (!input) return;
   const ticker = input.value.trim().toUpperCase();
   if (!ticker || !/^[A-Z0-9.]{1,10}$/.test(ticker)) { input.value = ""; return; }
-  if (state.portfolio.includes(ticker) || state.watchlist.includes(ticker)) { input.value = ""; return; }
+  if (state.favorites.includes(ticker) || state.watchlist.includes(ticker)) { input.value = ""; return; }
 
   input.value = "";
   await fetch(`/api/lists/${ticker}`, {method: "POST"});
@@ -216,7 +171,7 @@ async function handleAddTicker() {
 
   try {
     await fetch("/api/lookup/" + ticker);
-    const allTickers = [...new Set([...state.portfolio, ...state.watchlist])];
+    const allTickers = [...new Set([...state.favorites, ...state.watchlist])];
     const res = await fetch("/api/watchlist?tickers=" + allTickers.join(","));
     state.watchlistData = await res.json();
   } catch (e) {
@@ -228,33 +183,24 @@ async function handleAddTicker() {
 
 async function removeTicker(ticker) {
   await fetch(`/api/lists/${ticker}`, {method: "DELETE"});
-  state.portfolio = state.portfolio.filter(t => t !== ticker);
+  state.favorites = state.favorites.filter(t => t !== ticker);
   state.watchlist = state.watchlist.filter(t => t !== ticker);
   delete state.watchlistData[ticker];
-  delete state.portfolioHoldings[ticker];
-  if (state.editingTicker === ticker) state.editingTicker = null;
   renderHomeSections();
 }
 
-async function _moveTicker(ticker, targetList) {
+async function toggleFavorite(ticker) {
+  const makeFav = !state.favorites.includes(ticker);
+  const targetList = makeFav ? "favorite" : "watchlist";
   await fetch(`/api/lists/${ticker}?list_type=${targetList}`, {method: "PATCH"});
-  if (targetList === "portfolio") {
-    if (!state.portfolio.includes(ticker)) state.portfolio.push(ticker);
-    state.portfolioHoldings[ticker] = { avg_cost: null, shares: null };
+  if (makeFav) {
+    state.watchlist = state.watchlist.filter(t => t !== ticker);
+    if (!state.favorites.includes(ticker)) state.favorites.push(ticker);
   } else {
-    state.portfolio = state.portfolio.filter(t => t !== ticker);
-    delete state.portfolioHoldings[ticker];
-    if (state.editingTicker === ticker) state.editingTicker = null;
+    state.favorites = state.favorites.filter(t => t !== ticker);
+    if (!state.watchlist.includes(ticker)) state.watchlist.push(ticker);
   }
   renderHomeSections();
-}
-
-async function moveToPortfolio(ticker) {
-  await _moveTicker(ticker, "portfolio");
-}
-
-async function moveToWatchlist(ticker) {
-  await _moveTicker(ticker, "watchlist");
 }
 
 // ── Detail view ───────────────────────────────────────────────────────────────
@@ -290,7 +236,7 @@ function _isInFlight(status, ticker) {
 }
 
 async function handleRefreshAll() {
-  const allTickers = [...new Set([...state.portfolio, ...state.watchlist])];
+  const allTickers = [...new Set([...state.favorites, ...state.watchlist])];
   if (!allTickers.length) return;
   const btn = document.getElementById("refresh-all-btn");
   if (btn) { btn.textContent = "↻ …"; btn.disabled = true; btn.classList.add("loading"); }
@@ -339,31 +285,6 @@ async function handleRefreshAll() {
   if (btn) { btn.textContent = "↻ Refresh"; btn.disabled = false; btn.classList.remove("loading"); }
 }
 
-async function handleRefreshPortfolio() {
-  if (!state.portfolio.length) return;
-  const btn = document.getElementById("refresh-pf-btn");
-  if (btn) { btn.textContent = "↻ …"; btn.disabled = true; btn.classList.add("loading"); }
-
-  await fetch("/api/portfolio/refresh", { method: "POST" }).catch(() => {});
-
-  while (true) {
-    await new Promise(r => setTimeout(r, 1500));
-    try {
-      const res = await fetch("/api/portfolio/prices");
-      const raw = await res.json();
-      const { _running, ...pfPrices } = raw;
-      state.portfolioData = pfPrices;
-      renderHomeSections();
-      if (!_running) break;
-    } catch (e) {
-      console.error("Portfolio price poll failed:", e);
-      break;
-    }
-  }
-
-  if (btn) { btn.textContent = "↻ Portfolio"; btn.disabled = false; btn.classList.remove("loading"); }
-}
-
 async function loadVersionBadge() {
   try {
     const res = await fetch("/api/system/info");
@@ -394,8 +315,7 @@ function renderHeader(mode, ticker, refreshedAt) {
            onkeydown="if(event.key==='Enter') handleAddTicker()">
     <button class="btn" onclick="handleAddTicker()">+</button>
   </div>
-  <button id="refresh-all-btn" class="btn" onclick="handleRefreshAll()">↻ Watchlist</button>
-  <button id="refresh-pf-btn" class="btn btn-secondary" onclick="handleRefreshPortfolio()">↻ Portfolio</button>
+  <button id="refresh-all-btn" class="btn" onclick="handleRefreshAll()">↻ Refresh</button>
   <button class="btn btn-secondary" onclick="triggerImport()" title="Replace all tickers with a Yahoo Finance portfolio/watchlist CSV export (Yahoo Finance → Portfolio → Export)">↑ Import</button>
   <input id="import-file-input" type="file" accept=".csv" style="display:none" onchange="handleImportFile(event)">
 </div>`;
@@ -508,8 +428,7 @@ function showBuyTargetTooltip(event, ticker){ showOverlay(event, buildBuyTargetT
 
 Object.assign(window, {
   navigate, handleAddTicker, handleRefreshAll, removeTicker,
-  moveToPortfolio, moveToWatchlist, setPfSort, setWlSort, setWlFilter, clearWlFilters, triggerImport,
+  toggleFavorite, setWlSort, setWlFilter, clearWlFilters, triggerImport,
   handleImportFile, showScoreTooltip, showDeltaTooltip, showBuyTargetTooltip, hideTooltip,
-  editHolding, saveHolding, cancelEdit, handleRefreshPortfolio,
   priceChartHover, chartHoverEnd,
 });

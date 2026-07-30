@@ -5,7 +5,7 @@ import logging
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -20,9 +20,7 @@ from db.models import (
     FetchTimestamp,
     FundamentalsHistory,
     MarketSnapshot,
-    PortfolioHolding,
     ScoreHistory,
-    Watchlist,
 )
 from util import parse_iso_aware, utcnow_iso
 
@@ -35,24 +33,19 @@ AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
-    async with AsyncSessionLocal() as s:
-        result = await s.execute(select(Watchlist).where(Watchlist.list_type == "portfolio"))
-        old_pf = result.scalars().all()
-        for row in old_pf:
-            stmt = (
-                pg_insert(PortfolioHolding)
-                .values(ticker=row.ticker, avg_cost=None, shares=None, added_at=row.added_at)
-                .on_conflict_do_nothing()
-            )
-            await s.execute(stmt)
-            await s.execute(
-                update(Watchlist)
-                .where(Watchlist.ticker == row.ticker)
-                .values(list_type="watchlist")
-            )
-        if old_pf:
-            await s.commit()
+        # Portfolio was removed in favor of a lightweight "favorites" flag. One-time migration:
+        # carry any prior holdings over as favorites (so those names aren't lost), then drop the
+        # now-orphan portfolio tables. Guarded on table existence → no-op on fresh DBs and re-runs.
+        await conn.exec_driver_sql(
+            "DO $$ BEGIN "
+            "IF to_regclass('portfolio_holdings') IS NOT NULL THEN "
+            "INSERT INTO watchlist (ticker, list_type, added_at) "
+            "SELECT ticker, 'favorite', added_at FROM portfolio_holdings "
+            "ON CONFLICT (ticker) DO UPDATE SET list_type = 'favorite'; "
+            "END IF; END $$;"
+        )
+        await conn.exec_driver_sql("DROP TABLE IF EXISTS portfolio_holdings")
+        await conn.exec_driver_sql("DROP TABLE IF EXISTS portfolio_prices")
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

@@ -606,19 +606,21 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 }
 .btn-remove:hover { color: var(--red); }
 
-.btn-move {
+.btn-star {
   background: none;
-  border: 1px solid var(--border);
+  border: none;
   color: var(--subtext);
   cursor: pointer;
-  font-size: 10px;
-  padding: 2px 7px;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 4px;
   border-radius: 4px;
-  transition: border-color 0.12s, color 0.12s;
+  transition: color 0.12s, transform 0.12s;
   font-family: inherit;
-  margin-right: 4px;
+  margin-right: 2px;
 }
-.btn-move:hover { border-color: var(--blue); color: var(--blue); }
+.btn-star:hover      { color: var(--yellow); transform: scale(1.15); }
+.btn-star.starred    { color: var(--yellow); }
 
 /* ── Tooltip ─────────────────────────────────────────────────── */
 .tooltip {
@@ -818,61 +820,6 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   text-overflow: ellipsis;
   max-width: 110px;
 }
-
-/* ── Portfolio holding columns ───────────────────────────────── */
-.pf-col {
-  font-variant-numeric: tabular-nums;
-}
-
-.pf-input {
-  background: var(--surface2);
-  border: 1px solid var(--blue);
-  color: var(--text);
-  border-radius: 4px;
-  padding: 2px 6px;
-  font: inherit;
-  font-size: 12px;
-  width: 76px;
-  text-align: right;
-  outline: none;
-}
-.pf-input:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(88,166,255,0.2); }
-
-.btn-edit {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 2px 7px;
-  border-radius: 4px;
-  font-family: inherit;
-  margin-right: 4px;
-  transition: color 0.12s, border-color 0.12s;
-}
-.btn-edit:hover { color: var(--blue); border-color: var(--blue); }
-
-.pf-total-badge {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--subtext);
-  margin-left: 10px;
-  vertical-align: middle;
-}
-
-.btn-save {
-  background: rgba(63,185,80,0.12);
-  border: 1px solid rgba(63,185,80,0.3);
-  color: var(--green);
-  cursor: pointer;
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-family: inherit;
-  margin-right: 4px;
-  transition: background 0.12s;
-}
-.btn-save:hover { background: rgba(63,185,80,0.22); }
 
 .wl-filters {
   display: flex;

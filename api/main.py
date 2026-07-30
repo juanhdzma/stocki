@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from api.routers import history, lookup, market, portfolio, refresh, status, system, watchlist
+from api.routers import history, lookup, market, refresh, status, system, watchlist
 from core.fetchers.yahoo import init_auth
 from db.cache import engine, init_db
 
@@ -27,7 +27,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Stocki", lifespan=lifespan)
 
-app.include_router(portfolio.router, prefix="/api")
 app.include_router(refresh.router, prefix="/api")
 app.include_router(lookup.router, prefix="/api")
 app.include_router(watchlist.router, prefix="/api")

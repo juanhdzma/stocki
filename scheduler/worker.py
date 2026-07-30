@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import nullsfirst, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from core.fetchers.openinsider import fetch_insider_transactions
 from core.fetchers.yahoo import (
@@ -15,7 +13,6 @@ from core.fetchers.yahoo import (
     fetch_earnings_dates,
     fetch_fundamentals,
     fetch_market_snapshot,
-    fetch_portfolio_price,
     init_auth,
 )
 from core.scorers.composite import compute_all
@@ -31,8 +28,7 @@ from db.cache import (
     write_score_history_if_missing,
     write_snapshot,
 )
-from db.models import MarketSnapshot, PortfolioHolding, PortfolioPrice, Watchlist
-from util import utcnow_iso
+from db.models import MarketSnapshot, Watchlist
 
 INSIDER_TTL = timedelta(hours=24)
 FUNDAMENTALS_TTL = timedelta(days=7)
@@ -52,7 +48,6 @@ log = logging.getLogger(__name__)
 _in_flight: set[str] = set()
 _errors: dict[str, set[str]] = {}
 _refresh_running: bool = False
-_pf_refresh_running: bool = False
 
 # Keep a reference to fire-and-forget tasks so they aren't garbage-collected mid-run, and
 # surface any exception instead of letting it vanish silently (the default for a lost task).
@@ -281,60 +276,3 @@ async def _refresh_all_impl(force: bool = False) -> None:
             await asyncio.sleep(batch_delay)
 
     log.info("Refresh complete")
-
-
-def is_pf_refresh_running() -> bool:
-    return _pf_refresh_running
-
-
-async def refresh_portfolio_prices() -> None:
-    global _pf_refresh_running
-    if _pf_refresh_running:
-        log.info("Portfolio price refresh already in progress, skipping")
-        return
-    _pf_refresh_running = True
-    try:
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(select(PortfolioHolding.ticker))
-            tickers = [r[0] for r in result.all()]
-
-        if not tickers:
-            log.info("No portfolio tickers to refresh")
-            return
-
-        log.info("Portfolio price refresh: %s", tickers)
-        try:
-            hist = await asyncio.to_thread(batch_download_history, tickers, "10d")
-        except Exception as exc:
-            log.warning("Portfolio bulk download failed (%s) — falling back to per-ticker", exc)
-            hist = None
-
-        await asyncio.to_thread(init_auth)
-
-        async def _refresh_one_price(ticker: str) -> None:
-            try:
-                data = await asyncio.to_thread(fetch_portfolio_price, ticker, hist)
-                now = utcnow_iso()
-                async with AsyncSessionLocal() as s:
-                    ins = pg_insert(PortfolioPrice).values(
-                        ticker=ticker,
-                        data_json=json.dumps(data),
-                        refreshed_at=now,
-                    )
-                    stmt = ins.on_conflict_do_update(
-                        index_elements=["ticker"],
-                        set_={
-                            "data_json": ins.excluded.data_json,
-                            "refreshed_at": ins.excluded.refreshed_at,
-                        },
-                    )
-                    await s.execute(stmt)
-                    await s.commit()
-                log.info("[%s] portfolio price updated", ticker)
-            except Exception as exc:
-                log.error("[%s] portfolio price refresh failed: %s", ticker, exc)
-
-        await asyncio.gather(*[_refresh_one_price(t) for t in tickers])
-        log.info("Portfolio price refresh complete")
-    finally:
-        _pf_refresh_running = False

@@ -261,39 +261,25 @@ async def test_refresh_one_batches_history_when_none_given():
     mock_fetch.assert_called_once_with("PLTR", "FAKE_HIST")
 
 
-# ── portfolio ────────────────────────────────────────────────────────────────
-
-
-def test_portfolio_does_not_import_tickers():
-    """portfolio.py must not import TICKERS from config."""
-    import api.routers.portfolio as p
-
-    assert not hasattr(p, "TICKERS"), "portfolio.py must not import TICKERS from config"
+# ── lists / favorites ─────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_lists_returns_db_tickers():
-    """get_lists must serve watchlist/portfolio tickers from the DB, not config."""
+async def test_lists_splits_watchlist_and_favorites_by_list_type():
+    """get_lists must serve tickers from the DB, split into watchlist/favorites by list_type."""
     from api.routers.watchlist import get_lists
 
-    wl_result = MagicMock()
-    wl_result.all.return_value = [("NVDA",)]
-
-    holding_row = MagicMock()
-    holding_row.ticker = "AAPL"
-    holding_row.avg_cost = 150.0
-    holding_row.shares = 10
-    pf_result = MagicMock()
-    pf_result.scalars.return_value.all.return_value = [holding_row]
+    rows = MagicMock()
+    rows.all.return_value = [("NVDA", "watchlist"), ("AAPL", "favorite")]
 
     mock_session = AsyncMock()
-    mock_session.execute = AsyncMock(side_effect=[wl_result, pf_result])
+    mock_session.execute = AsyncMock(return_value=rows)
 
     result = await get_lists(session=mock_session)
 
-    assert "NVDA" in result["watchlist"]
-    assert "AAPL" in result["portfolio"]
-    assert "SOFI" not in result["watchlist"] and "SOFI" not in result["portfolio"], (
+    assert result["watchlist"] == ["NVDA"]
+    assert result["favorites"] == ["AAPL"]
+    assert "SOFI" not in result["watchlist"] and "SOFI" not in result["favorites"], (
         "Hardcoded SOFI must not appear"
     )
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Float, String, Text, UniqueConstraint
+from sqlalchemy import String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -28,22 +28,8 @@ class MarketSnapshot(Base):
 class Watchlist(Base):
     __tablename__ = "watchlist"
     ticker: Mapped[str] = mapped_column(String(20), primary_key=True)
+    # "watchlist" | "favorite" — favorites surface in a separate top section (a starred subset)
     list_type: Mapped[str] = mapped_column(String(20), server_default="watchlist")
-    added_at: Mapped[str] = mapped_column(String(32), server_default="1970-01-01T00:00:00+00:00")
-
-
-class PortfolioPrice(Base):
-    __tablename__ = "portfolio_prices"
-    ticker: Mapped[str] = mapped_column(String(20), primary_key=True)
-    data_json: Mapped[str] = mapped_column(Text)
-    refreshed_at: Mapped[str] = mapped_column(String(32))
-
-
-class PortfolioHolding(Base):
-    __tablename__ = "portfolio_holdings"
-    ticker: Mapped[str] = mapped_column(String(20), primary_key=True)
-    avg_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
-    shares: Mapped[float | None] = mapped_column(Float, nullable=True)
     added_at: Mapped[str] = mapped_column(String(32), server_default="1970-01-01T00:00:00+00:00")
 
 
