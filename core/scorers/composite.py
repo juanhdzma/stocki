@@ -19,11 +19,11 @@ _QUALITY_WEIGHTS_LONG = {
 }
 
 _THRESHOLDS = [
-    (80, "STRONG-BUY"),
-    (60, "BUY"),
-    (40, "HOLD"),
-    (20, "SELL"),
-    (0, "STRONG-SELL"),
+    (80, "STRONG"),
+    (60, "SOLID"),
+    (40, "FAIR"),
+    (20, "WEAK"),
+    (0, "AVOID"),
 ]
 
 
@@ -118,7 +118,7 @@ def _composite_long(
     # Long ranks businesses by quality (fm/vq/insiders) first — price and recent dips are
     # bounded modifiers on top, never enough to let a mediocre "statistically cheap" business
     # (often driven by optimistic analyst targets) outrank a genuinely better one. A cheap
-    # price or a beta-adjusted dip can still tip a good-not-great business into STRONG-BUY,
+    # price or a beta-adjusted dip can still tip a good-not-great business into STRONG,
     # but neither can rescue a bad business — that only happens by raising quality itself.
     weights_pct = {k: round(v * 100) for k, v in _QUALITY_WEIGHTS_LONG.items()}
     quality = _quality_score(base)
@@ -498,7 +498,7 @@ def _risk_flags(
             {
                 "key": "rev",
                 "label": "REV↓",
-                "title": f"Revenue trending down{yoy} — score capped below STRONG-BUY",
+                "title": f"Revenue trending down{yoy} — score capped below STRONG",
             }
         )
 

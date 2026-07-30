@@ -456,12 +456,12 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
-.action-STRONG-BUY  { background: rgba(0,200,83,0.15);    color: var(--s5); }
-.action-BUY         { background: rgba(173,222,99,0.15);  color: var(--s4); }
-.action-HOLD        { background: rgba(253,216,53,0.12);  color: var(--s3); }
-.action-SELL        { background: rgba(255,140,0,0.15);   color: var(--s2); }
-.action-STRONG-SELL { background: rgba(255,68,68,0.15);   color: var(--s1); }
-.action-NA          { background: rgba(139,148,158,0.15); color: var(--subtext); }
+.action-STRONG { background: rgba(0,200,83,0.15);    color: var(--s5); }
+.action-SOLID  { background: rgba(173,222,99,0.15);  color: var(--s4); }
+.action-FAIR   { background: rgba(253,216,53,0.12);  color: var(--s3); }
+.action-WEAK   { background: rgba(255,140,0,0.15);   color: var(--s2); }
+.action-AVOID  { background: rgba(255,68,68,0.15);   color: var(--s1); }
+.action-NA     { background: rgba(139,148,158,0.15); color: var(--subtext); }
 
 /* ── Risk flags (next to the action badge) ───────────────── */
 .risk-flag {

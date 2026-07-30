@@ -363,11 +363,11 @@ export function renderPortfolioTable(tickers) {
       ? `<input class="pf-input" id="pf-shares-${ticker}" type="number" step="1" min="0" placeholder="Shares" value="${shares ?? ""}" onkeydown="if(event.key==='Enter') saveHolding('${ticker}')">`
       : fmtShares(shares);
 
-    // Thesis-aware: a held name that's in profit but whose verdict decayed to HOLD/SELL is
-    // the "up 40% and it just turned SELL" case — flag it so the P&L doesn't hide the rot.
+    // Thesis-aware: a held name that's in profit but whose verdict decayed to FAIR/WEAK is
+    // the "up 40% and it just turned WEAK" case — flag it so the P&L doesn't hide the rot.
     const action    = wd?.scores?.composite_long?.action;
     const longScore = wd?.scores?.composite_long?.score;
-    const decayed   = ["HOLD", "SELL", "STRONG-SELL"].includes(action);
+    const decayed   = ["FAIR", "WEAK", "AVOID"].includes(action);
     const thesisWarn = (diffPct != null && diffPct > 0.05 && decayed)
       ? ` <span class="risk-flag risk-rev" title="In profit but the verdict is now ${actionLabel(action)} — thesis decayed">⚠</span>` : "";
     const scoreCell = `<td class="col-sep ${scoreColor(longScore)}" style="text-align:center"

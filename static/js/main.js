@@ -63,7 +63,7 @@ function renderWlFilterBar() {
   const f = state.wlFilters;
   const opt = (v, label, cur) => `<option value="${v}"${v === cur ? " selected" : ""}>${label}</option>`;
   const sectors = [...new Set(state.watchlist.map(t => state.watchlistData[t]?.snapshot?.sector).filter(Boolean))].sort();
-  const actions = [["STRONG-BUY", "Strong Buy"], ["BUY", "Buy"], ["HOLD", "Hold"], ["SELL", "Sell"], ["STRONG-SELL", "Strong Sell"]];
+  const actions = [["STRONG", "Strong"], ["SOLID", "Solid"], ["FAIR", "Fair"], ["WEAK", "Weak"], ["AVOID", "Avoid"]];
   const flagLabels = { new: "NEW", rev: "REV↓", cyclical: "CYCLICAL", expensive: "$$$", earnings: "Earnings soon", price: "PRICE?" };
   const flags = [...new Set(state.watchlist.flatMap(t => (state.watchlistData[t]?.scores?.flags || []).map(fl => fl.key)))].sort();
   const active = f.action || f.signal || f.sector || f.flag || f.search;
@@ -72,7 +72,7 @@ function renderWlFilterBar() {
       placeholder="Search ticker…" autocomplete="off" spellcheck="false" value="${(f.search || "").replace(/"/g, "&quot;")}"
       oninput="setWlFilter('search', this.value)">
     <select class="wl-filter${f.action ? " wl-filter-on" : ""}" onchange="setWlFilter('action', this.value)">
-      <option value="">Action: all</option>${actions.map(([v, l]) => opt(v, l, f.action)).join("")}
+      <option value="">Rating: all</option>${actions.map(([v, l]) => opt(v, l, f.action)).join("")}
     </select>
     <select class="wl-filter${f.signal ? " wl-filter-on" : ""}" onchange="setWlFilter('signal', this.value)">
       <option value="">Signal: all</option>${opt("buy", "Buy", f.signal)}${opt("wait", "Wait", f.signal)}

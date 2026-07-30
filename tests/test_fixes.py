@@ -634,7 +634,7 @@ def test_composite_long_attractive_price_lifts_good_business_to_strong_buy():
         "insider_conviction": _mk(50),
     }
     result = _composite_long(base, _mk(100), {})
-    assert result["action"] == "STRONG-BUY"
+    assert result["action"] == "STRONG"
 
 
 def test_composite_long_quality_dominates_over_price_boost():
@@ -659,7 +659,7 @@ def test_composite_long_quality_dominates_over_price_boost():
 
 def test_composite_long_bad_price_no_longer_caps_a_strong_business():
     """Price is now a small additive boost (not a hard ceiling gate) — an excellent
-    business at a bad price should still land solidly in STRONG-BUY on quality alone."""
+    business at a bad price should still land solidly in STRONG on quality alone."""
     from core.scorers.composite import _composite_long
 
     base = {
@@ -668,7 +668,7 @@ def test_composite_long_bad_price_no_longer_caps_a_strong_business():
         "insider_conviction": _mk(50),
     }
     result = _composite_long(base, _mk(20), {})
-    assert result["action"] == "STRONG-BUY"
+    assert result["action"] == "STRONG"
 
 
 def test_composite_long_cheap_price_does_not_rescue_bad_business():
@@ -680,7 +680,7 @@ def test_composite_long_cheap_price_does_not_rescue_bad_business():
         "insider_conviction": _mk(50),
     }
     result = _composite_long(base, _mk(100), {})
-    assert result["action"] in ("SELL", "STRONG-SELL"), (
+    assert result["action"] in ("WEAK", "AVOID"), (
         "a great price must not rescue a bad business"
     )
 
@@ -750,7 +750,7 @@ def test_composite_long_one_off_base_no_longer_caps_below_strong_buy():
     }
     flat = [_q(2_858_000), _q(2_752_000), _q(3_739_000), _q(3_095_000), _q(15_001_000)]
     result = _composite_long(base, _mk(50), {"revenue_growth": -0.809}, flat)
-    assert result["action"] == "STRONG-BUY"
+    assert result["action"] == "STRONG"
 
 
 def test_composite_long_dip_bonus_does_not_rescue_bad_business():
@@ -766,7 +766,7 @@ def test_composite_long_dip_bonus_does_not_rescue_bad_business():
     result = _composite_long(
         base, _mk(50), {"beta": 1.0, "day_change_pct": -20, "returns": {"ticker_return_1w": -0.30}}
     )
-    assert result["action"] in ("SELL", "STRONG-SELL")
+    assert result["action"] in ("WEAK", "AVOID")
 
 
 # ── insider_score: post-earnings bonus asymmetry ────────────────────────────────
@@ -1156,8 +1156,8 @@ def test_composite_long_caps_below_strong_buy_when_revenue_declining():
     declining = [_q(70), _q(85), _q(100), _q(115)]  # newest-first, trending down
     result = _composite_long(base, _mk(90), {"revenue_growth": -0.035}, declining)
     assert result["score"] <= 79.9
-    assert result["action"] != "STRONG-BUY", (
-        "trailing quality alone shouldn't reach STRONG-BUY with shrinking revenue"
+    assert result["action"] != "STRONG", (
+        "trailing quality alone shouldn't reach STRONG with shrinking revenue"
     )
 
 
@@ -1171,7 +1171,7 @@ def test_composite_long_no_cap_when_revenue_growing():
     }
     result = _composite_long(base, _mk(90), {"revenue_growth": 0.10})
     assert result["score"] > 79.9
-    assert result["action"] == "STRONG-BUY"
+    assert result["action"] == "STRONG"
 
 
 # ── composite: diff_scores (score change tracking) ────────────────────────────────
@@ -1195,7 +1195,7 @@ def _snap(
             "sub_scores": {"valid_buys": 1, "valid_sells": 0},
         },
         "price_long": {"score": pl_score, "sub_scores": pl_sub or {}, "max_pts": {}},
-        "composite_long": {"score": composite, "action": "HOLD", "weights": {}},
+        "composite_long": {"score": composite, "action": "FAIR", "weights": {}},
     }
 
 

@@ -23,7 +23,7 @@ export function pctScoreColor(val, scale) {
 }
 
 export function actionLabel(a) {
-  return (a || "NA").replace("-", " ");
+  return a || "NA";
 }
 
 export function actionBadge(scores) {
