@@ -67,6 +67,7 @@ static/
     state.js               # shared mutable `state` object (module imports are read-only, so cross-module state is routed through it)
     format.js colors.js    # pure formatters / score-color + badge helpers
     overlay.js charts.js   # tooltip positioning / all SVG charts
+    events.js              # "Today & Yesterday" section (insider trades + earnings in the last 2 ET days)
     tooltips.js cards.js    # hover+score tooltips / detail-view render pipeline
     tables.js api.js        # watchlist+favorites tables / fetch wrappers
     main.js                # stateful glue: handlers, router, window.* exports, bootstrap
@@ -189,7 +190,7 @@ Returns `{price, pct_from_current, signal, …breakdown}` where `signal` is `"bu
 **Fetch-status symbol** (one per row): `✓` ok · `⟳` in progress · `✕` a fetch failed · `·` pending/partial.
 
 ## DB tables
-- `market_snapshot` — one row per ticker, `data_json` holds price + fundamentals + insider transactions + scores
+- `market_snapshot` — one row per ticker, `data_json` holds price + fundamentals + insider transactions + scores. `earnings_dates` (list[str], consumed by the `E-Nd` flag + insider post-earnings bonus) plus `earnings_events` (rich rows `{date, datetime ET, eps_estimate, reported_eps, surprise_pct}` from yfinance `get_earnings_dates` — `reported_eps` is `None` until reported; drives the "Today & Yesterday" section's upcoming-time vs EPS-beat split. yfinance exposes no revenue actual-vs-estimate, so only EPS is carried).
 - `watchlist` — tickers with `list_type` (`watchlist` | `favorite`). Favorites are a starred subset surfaced in a separate top section — no holdings/P&L, just the same scored table. (Portfolio holdings/P&L were removed; `init_db` migrated any prior `portfolio_holdings` rows to `favorite` and dropped the `portfolio_holdings`/`portfolio_prices` tables.)
 - `fundamentals_history` — quarterly fundamentals per ticker
 - `fetch_timestamps` — per-ticker, per-data-type last fetch time

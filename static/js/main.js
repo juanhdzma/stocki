@@ -5,6 +5,7 @@ import { render, loadPriceTrend } from "./cards.js";
 import { buildScoreTooltip, buildDeltaTooltip, buildBuyTargetTooltip } from "./tooltips.js";
 import { showOverlay, hideTooltip } from "./overlay.js";
 import { renderMarketBar } from "./market.js";
+import { renderTodayYesterday } from "./events.js";
 import { priceChartHover, chartHoverEnd } from "./charts.js";
 
 async function loadLists() {
@@ -94,6 +95,7 @@ function renderHomeSections() {
   }
 
   let html = renderMarketBar(state.market, state.watchlistData, state.homeLoadedAt);
+  html += renderTodayYesterday(state.watchlistData);
 
   if (state.favorites.length) {
     html += `<section class="cat-section watchlist-section">

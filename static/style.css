@@ -120,6 +120,77 @@ main {
   margin-bottom: 8px;
 }
 
+/* ── Today & Yesterday ───────────────────────────────────── */
+.ty-stack {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 860px) { .ty-stack { grid-template-columns: 1fr; } }
+
+.ty-col {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.ty-company {
+  font-size: 10px;
+  color: var(--subtext);
+  font-weight: 400;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ty-h3 {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--subtext);
+  margin-bottom: 6px;
+}
+.ty-scroll { overflow-x: auto; }
+.ty-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.ty-table th, .ty-table td { text-align: center; padding: 5px 8px; }
+.ty-table th {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--subtext);
+  border-bottom: 1px solid var(--border);
+}
+.ty-table td { border-bottom: 1px solid var(--border); color: var(--text); }
+/* Ticker + company (first column) stay left; everything else is centered. */
+.ty-table th:first-child, .ty-table td:first-child { text-align: left; }
+.ty-table tbody tr:last-child td { border-bottom: none; }
+.ty-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
+.ty-table .ty-num { font-variant-numeric: tabular-nums; }
+.ty-move { font-weight: 600; }
+.ty-role { color: var(--text); }
+.ty-day {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--subtext);
+  background: var(--surface2);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.ty-today { color: var(--blue); background: rgba(88,166,255,0.12); }
+.ty-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.ty-upcoming { color: var(--yellow); background: rgba(210,153,34,0.14); }
+.ty-empty { text-align: center; padding: 10px; }
+
 /* ── Tables ──────────────────────────────────────────────── */
 table {
   width: 100%;

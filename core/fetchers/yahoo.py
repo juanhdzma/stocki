@@ -358,14 +358,32 @@ def _compute_dilution_rate(t: yf.Ticker) -> float | None:
 # ── Earnings dates ────────────────────────────────────────────────────────────
 
 
-def _compute_earnings_dates(t: yf.Ticker, limit: int = 12) -> list[str]:
+def _compute_earnings_events(t: yf.Ticker, limit: int = 12) -> list[dict]:
+    """Earnings calendar rows from yfinance, keeping the report datetime (ET, so the time-of-day is
+    known) and the EPS estimate/reported/surprise. `reported_eps` is None until a quarter is reported
+    — the upcoming/reported split the "today & yesterday" section keys off. yfinance exposes no
+    revenue actual-vs-estimate, so only EPS is carried."""
     try:
         df = t.get_earnings_dates(limit=limit)
         if df is None or df.empty:
             return []
-        return sorted(d.strftime("%Y-%m-%d") for d in df.index if pd.notna(d))
+        out = []
+        for ts, row in df.iterrows():
+            if pd.isna(ts):
+                continue
+            out.append(
+                {
+                    "date": ts.strftime("%Y-%m-%d"),  # ET calendar date (index is tz-aware ET)
+                    "datetime": ts.isoformat(),  # ISO w/ offset → frontend shows the time
+                    "eps_estimate": _f(row.get("EPS Estimate")),
+                    "reported_eps": _f(row.get("Reported EPS")),
+                    "surprise_pct": _f(row.get("Surprise(%)")),
+                }
+            )
+        out.sort(key=lambda e: e["date"])
+        return out
     except Exception as exc:
-        log.debug("earnings-dates fetch failed: %s", exc)
+        log.debug("earnings-events fetch failed: %s", exc)
         return []
 
 
@@ -566,11 +584,14 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "returns": returns,
         "insider_transactions": [],
         "earnings_dates": [],
+        "earnings_events": [],
     }
 
 
-def fetch_earnings_dates(ticker: str) -> list[str]:
-    return _compute_earnings_dates(yf.Ticker(ticker))
+def fetch_earnings(ticker: str) -> list[dict]:
+    """Earnings events (rich rows). The worker derives the plain date list from these for the
+    consumers that still want it (E-Nd flag, insider post-earnings bonus)."""
+    return _compute_earnings_events(yf.Ticker(ticker))
 
 
 def fetch_grade_history(ticker: str) -> list[dict]:

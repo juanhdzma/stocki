@@ -10,7 +10,7 @@ from sqlalchemy import nullsfirst, select
 from core.fetchers.openinsider import fetch_insider_transactions
 from core.fetchers.yahoo import (
     batch_download_history,
-    fetch_earnings_dates,
+    fetch_earnings,
     fetch_fundamentals,
     fetch_market_snapshot,
     init_auth,
@@ -145,17 +145,20 @@ async def refresh_one(ticker: str, hist=None, force: bool = False) -> None:
                 txs = None
 
             if await should_fetch(session, ticker, "earnings", EARNINGS_TTL):
-                log.info("[%s] fetching earnings dates", ticker)
+                log.info("[%s] fetching earnings", ticker)
                 try:
-                    earnings_dates = await asyncio.to_thread(fetch_earnings_dates, ticker)
+                    earnings_events = await asyncio.to_thread(fetch_earnings, ticker)
+                    earnings_dates = [e["date"] for e in earnings_events]
                     await set_last_fetch(session, ticker, "earnings")
                     errs.discard("earnings")
                 except Exception as exc:
-                    log.warning("[%s] earnings dates fetch failed: %s", ticker, exc)
+                    log.warning("[%s] earnings fetch failed: %s", ticker, exc)
                     errs.add("earnings")
+                    earnings_events = None
                     earnings_dates = None
             else:
-                log.info("[%s] earnings dates cached", ticker)
+                log.info("[%s] earnings cached", ticker)
+                earnings_events = None
                 earnings_dates = None
 
             final_snap = existing
@@ -171,6 +174,11 @@ async def refresh_one(ticker: str, hist=None, force: bool = False) -> None:
                     if earnings_dates is not None
                     else (existing.get("earnings_dates", []) if existing else [])
                 )
+                snapshot["earnings_events"] = (
+                    earnings_events
+                    if earnings_events is not None
+                    else (existing.get("earnings_events", []) if existing else [])
+                )
                 await write_snapshot(session, ticker, snapshot)
                 await set_last_fetch(session, ticker, "snapshot")
                 final_snap = snapshot
@@ -179,6 +187,7 @@ async def refresh_one(ticker: str, hist=None, force: bool = False) -> None:
                     existing["insider_transactions"] = txs
                 if earnings_dates is not None:
                     existing["earnings_dates"] = earnings_dates
+                    existing["earnings_events"] = earnings_events
                 await write_snapshot(session, ticker, existing)
 
             if await should_fetch(session, ticker, "fundamentals", FUNDAMENTALS_TTL):
