@@ -445,7 +445,9 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
     pct_from_1w_high = _compute_1w_pct(ticker, price, hist)
     realized_vol_windows = _compute_realized_vol(ticker, hist)
     realized_vol = (
-        sum(realized_vol_windows.values()) / len(realized_vol_windows) if realized_vol_windows else None
+        sum(realized_vol_windows.values()) / len(realized_vol_windows)
+        if realized_vol_windows
+        else None
     )
 
     # Price sanity: a spurious quote (split-mismatch, bad tick) deviates wildly from the prior
@@ -496,6 +498,7 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "eps_ttm": _f(info.get("trailingEps")),
         "price_to_sales": _f(info.get("priceToSalesTrailing12Months")),
         "ev_to_revenue": _f(info.get("enterpriseToRevenue")),
+        "ev_to_ebitda": _f(info.get("enterpriseToEbitda")),
         # Margins & returns (current)
         "gross_margin": _f(info.get("grossMargins")),
         "operating_margin": _f(info.get("operatingMargins")),

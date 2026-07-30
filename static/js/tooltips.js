@@ -213,8 +213,10 @@ export function buildScoreTooltip(ticker, col, d) {
       const max = category.max_pts || {};
       rows = [
         subScoreBar("Forward P/E",        sub.fwd_pe,             max.fwd_pe),
+        subScoreBar("EV/EBITDA",          sub.ev_ebitda,          max.ev_ebitda),
         subScoreBar("PEG",                sub.peg,                max.peg),
         subScoreBar("P/S (growth-adj)",   sub.growth_adj_ps,      max.growth_adj_ps),
+        subScoreBar("EV/Sales (growth-adj)", sub.ev_sales,        max.ev_sales),
         bonusRow("Analyst Upside",        sub.analyst_upside,     max.analyst_upside),
       ].join("");
       break;

@@ -848,14 +848,46 @@ def test_price_long_valuation_multiples_broken_out_no_conviction():
 
     result = score([], {})
     # the valuation multiples are exposed as separate weighted sub-scores (not one blended bar)
-    for k in ("fwd_pe", "peg", "growth_adj_ps"):
+    multiples = ("fwd_pe", "ev_ebitda", "peg", "growth_adj_ps", "ev_sales")
+    for k in multiples:
         assert k in result["max_pts"]
     assert "analyst_upside" in result["max_pts"]  # additive-only bonus
     # analyst_conviction was a near-constant herd signal across the watchlist -> dropped
     assert "analyst_conviction" not in result["max_pts"]
     # the multiples together outweigh the analyst-upside bonus
-    multiples = sum(result["max_pts"][k] for k in ("fwd_pe", "peg", "growth_adj_ps"))
-    assert multiples > result["max_pts"]["analyst_upside"]
+    assert sum(result["max_pts"][k] for k in multiples) > result["max_pts"]["analyst_upside"]
+
+
+def test_ev_sales_gives_pre_profit_names_a_valuation():
+    """A pre-profit name (no P/E, no EBITDA, no PEG) must still get a valuation signal from the
+    sales-based multiples rather than a null axis — EV/Sales applies without earnings."""
+    from core.scorers.price_long import score
+
+    snap = {"ev_to_revenue": 1.5, "revenue_growth": 0.5, "price_to_sales": None, "forward_pe": -10.0}
+    result = score([], snap)
+    assert result["sub_scores"]["ev_sales"] == 6.0  # 1.5 / 1.5 = 1.0 adj -> cheap tier
+    assert result["sub_scores"]["fwd_pe"] is None  # pre-profit: no earnings multiple
+    assert result["score"] is not None  # ...but the axis still scores off EV/Sales
+
+
+def test_ev_ebitda_rescues_depressed_earnings_name():
+    """EV/EBITDA must value a name whose net earnings are depressed (sky-high P/E) but whose
+    EBITDA multiple is reasonable — the P/E-only axis misread these (e.g. BA) as expensive."""
+    from core.scorers.price_long import score
+
+    # forward P/E 50 (bottom tier, 0) but EV/EBITDA 18 (a mid tier) -> the axis should not read
+    # this as bottom-of-the-barrel expensive.
+    cheap_ebitda = score([], {"forward_pe": 50.0, "ev_to_ebitda": 18.0})
+    only_pe = score([], {"forward_pe": 50.0})
+    assert cheap_ebitda["sub_scores"]["ev_ebitda"] == 7.0
+    assert cheap_ebitda["score"] > only_pe["score"]
+
+
+def test_ev_ebitda_none_on_negative_ebitda():
+    from core.scorers.price_long import score
+
+    result = score([], {"ev_to_ebitda": -5.0, "forward_pe": 12.0})
+    assert result["sub_scores"]["ev_ebitda"] is None  # negative EBITDA -> multiple not meaningful
 
 
 # ── value_quality: cash position (burn runway vs. cash cushion) ─────────────────
