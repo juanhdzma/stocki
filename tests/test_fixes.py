@@ -843,12 +843,16 @@ def test_value_quality_no_longer_includes_valuation_or_analyst_conviction():
     assert "analyst_conviction" not in result["max_pts"]
 
 
-def test_price_long_includes_valuation_and_analyst_conviction():
+def test_price_long_is_valuation_led_no_conviction():
     from core.scorers.price_long import score
 
     result = score([], {})
     assert "valuation" in result["max_pts"]
-    assert "analyst_conviction" in result["max_pts"]
+    assert "analyst_upside" in result["max_pts"]
+    # analyst_conviction was a near-constant herd signal across the watchlist -> dropped
+    assert "analyst_conviction" not in result["max_pts"]
+    # valuation leads the axis
+    assert result["max_pts"]["valuation"] > result["max_pts"]["analyst_upside"]
 
 
 # ── value_quality: cash position (burn runway vs. cash cushion) ─────────────────
@@ -1401,25 +1405,6 @@ def test_cyclical_surge_ignores_monotonic_hypergrowth():
     assert _is_cyclical_surge(ann, {"revenue_growth": 6.8}) is False
 
 
-def test_fcf_yield_converts_foreign_currency_instead_of_dropping():
-    from core.scorers.price_long import score
-
-    # foreign filer: FCF in local ccy, market_cap in price ccy -> convert via fx_rate
-    snap = {"market_cap": 10e9, "currency": "USD", "financial_currency": "DKK", "fx_rate": 0.15}
-    funds = [{"type": "quarterly", "fcf": 1e10}]  # 1e10 DKK * 0.15 = 1.5e9 USD -> 15% yield
-    result = score(funds, snap)
-    assert result["sub_scores"]["fcf_yield"] is not None
-
-
-def test_fcf_yield_excluded_when_foreign_and_no_fx_rate():
-    from core.scorers.price_long import score
-
-    snap = {"market_cap": 10e9, "currency": "USD", "financial_currency": "DKK", "fx_rate": None}
-    funds = [{"type": "quarterly", "fcf": 1e10}]
-    result = score(funds, snap)
-    assert result["sub_scores"]["fcf_yield"] is None  # can't convert -> don't mix currencies
-
-
 # ── refactor bug fixes (W1) ─────────────────────────────────────────────────────
 
 
@@ -1451,7 +1436,7 @@ def test_valuation_partial_coverage_not_capped_below_axis():
     from core.scorers.price_long import score
 
     result = score([], {"peg_ratio": 0.8})
-    assert result["sub_scores"]["valuation"] == 20.0  # was 6.2 (8/26*20) before the fix
+    assert result["sub_scores"]["valuation"] == 35.0  # partial coverage still reaches the axis ceiling
 
 
 def test_ttm_annualizes_partial_year():

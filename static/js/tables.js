@@ -40,7 +40,7 @@ export const SCORE_COLS_INTERMEDIATE = [
   { key: "growth",      label: "Growth"    },
   { key: "quality",     label: "Quality"   },
   { key: "insiders",    label: "Insiders"  },
-  { key: "price_long",  label: "Sentiment" },
+  { key: "price_long",  label: "Valuation" },
 ];
 
 export const SCORE_COLS_FINAL = [

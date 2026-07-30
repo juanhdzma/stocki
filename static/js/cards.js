@@ -69,7 +69,6 @@ function plDetails(cat, snap) {
   if (!sub || !snap) return "—";
   const upside = (snap.price && snap.target_mean) ? (snap.target_mean / snap.price - 1) : null;
   return [
-    statRow("FCF Yield",      fmtPctLevel(snap.fcf_yield),          subPct(sub, max, "fcf_yield")),
     statRow("Analyst Upside", fmtPctSigned(upside),                 subPct(sub, max, "analyst_upside")),
     statRow("Trailing P/E",   snap.trailing_pe != null ? snap.trailing_pe.toFixed(1) : "—", subPct(sub, max, "valuation")),
   ].join("") || "—";
@@ -92,7 +91,7 @@ function renderScoreCards(tickers, raw) {
       { title: "Growth",   score: fm.score, detail: fmDetails(fm, snap, quarterlies) },
       { title: "Quality",  score: vq.score, detail: vqDetails(vq, snap) },
       { title: "Insiders", score: ic.score, detail: icDetails(ic.sub_scores) },
-      { title: "Sentiment", score: pl.score, detail: plDetails(pl, snap) },
+      { title: "Valuation", score: pl.score, detail: plDetails(pl, snap) },
     ].map(c => `
       <div class="score-card">
         <div class="score-card-title">${c.title}</div>

@@ -208,14 +208,12 @@ export function buildScoreTooltip(ticker, col, d) {
     }
     case "price_long": {
       category = scores.price_long || {};
-      title = "Sentiment";
+      title = "Valuation";
       const sub = category.sub_scores || {};
       const max = category.max_pts || {};
       rows = [
-        subScoreBar("FCF Yield",          sub.fcf_yield,          max.fcf_yield),
-        subScoreBar("Analyst Upside",     sub.analyst_upside,     max.analyst_upside),
         subScoreBar("Valuation",          sub.valuation,          max.valuation),
-        subScoreBar("Analyst Conviction", sub.analyst_conviction, max.analyst_conviction),
+        bonusRow("Analyst Upside",        sub.analyst_upside,     max.analyst_upside),
       ].join("");
       break;
     }
@@ -240,7 +238,7 @@ export function buildScoreTooltip(ticker, col, d) {
       }).join("");
       const pl = scores.price_long?.score ?? null;
       rows += `<div class="tt-sub-row" title="Attractive price can lift a good business into STRONG BUY — a rich price never drags it down">
-        <span class="tt-sub-lbl">Sentiment <span class="subtext">boost</span></span>
+        <span class="tt-sub-lbl">Valuation <span class="subtext">boost</span></span>
         <div class="tt-sub-bar-wrap">${bar(pl)}</div>
         <span class="tt-sub-val ${scoreColor(pl)}">${pl != null ? pl.toFixed(1) : "—"}</span>
       </div>`;
@@ -265,7 +263,7 @@ export const DELTA_CATEGORY_LABELS = {
   fundamental_momentum: "Growth",
   value_quality:        "Quality",
   insider_conviction:   "Insiders",
-  price_long:           "Sentiment",
+  price_long:           "Valuation",
 };
 
 export function deltaBar(label, val, max) {
