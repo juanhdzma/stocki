@@ -843,16 +843,19 @@ def test_value_quality_no_longer_includes_valuation_or_analyst_conviction():
     assert "analyst_conviction" not in result["max_pts"]
 
 
-def test_price_long_is_valuation_led_no_conviction():
+def test_price_long_valuation_multiples_broken_out_no_conviction():
     from core.scorers.price_long import score
 
     result = score([], {})
-    assert "valuation" in result["max_pts"]
-    assert "analyst_upside" in result["max_pts"]
+    # the valuation multiples are exposed as separate weighted sub-scores (not one blended bar)
+    for k in ("fwd_pe", "peg", "growth_adj_ps"):
+        assert k in result["max_pts"]
+    assert "analyst_upside" in result["max_pts"]  # additive-only bonus
     # analyst_conviction was a near-constant herd signal across the watchlist -> dropped
     assert "analyst_conviction" not in result["max_pts"]
-    # valuation leads the axis
-    assert result["max_pts"]["valuation"] > result["max_pts"]["analyst_upside"]
+    # the multiples together outweigh the analyst-upside bonus
+    multiples = sum(result["max_pts"][k] for k in ("fwd_pe", "peg", "growth_adj_ps"))
+    assert multiples > result["max_pts"]["analyst_upside"]
 
 
 # ── value_quality: cash position (burn runway vs. cash cushion) ─────────────────
@@ -1435,8 +1438,11 @@ def test_profitability_partial_coverage_not_capped_below_axis():
 def test_valuation_partial_coverage_not_capped_below_axis():
     from core.scorers.price_long import score
 
+    # only PEG present (a cheap 0.8) -> the axis normalizes by the one present multiple and still
+    # reaches the ceiling instead of being dragged down by the absent fwd_pe / growth_adj_ps.
     result = score([], {"peg_ratio": 0.8})
-    assert result["sub_scores"]["valuation"] == 35.0  # partial coverage still reaches the axis ceiling
+    assert result["sub_scores"]["peg"] == 8.0
+    assert result["score"] == 100.0
 
 
 def test_ttm_annualizes_partial_year():

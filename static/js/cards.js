@@ -69,8 +69,10 @@ function plDetails(cat, snap) {
   if (!sub || !snap) return "—";
   const upside = (snap.price && snap.target_mean) ? (snap.target_mean / snap.price - 1) : null;
   return [
+    statRow("Forward P/E",    snap.forward_pe != null ? snap.forward_pe.toFixed(1) : "—", subPct(sub, max, "fwd_pe")),
+    statRow("PEG",            snap.peg_ratio != null ? snap.peg_ratio.toFixed(2) : "—", subPct(sub, max, "peg")),
+    statRow("P/S",            snap.price_to_sales != null ? snap.price_to_sales.toFixed(1) : "—", subPct(sub, max, "growth_adj_ps")),
     statRow("Analyst Upside", fmtPctSigned(upside),                 subPct(sub, max, "analyst_upside")),
-    statRow("Trailing P/E",   snap.trailing_pe != null ? snap.trailing_pe.toFixed(1) : "—", subPct(sub, max, "valuation")),
   ].join("") || "—";
 }
 

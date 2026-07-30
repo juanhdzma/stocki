@@ -212,7 +212,9 @@ export function buildScoreTooltip(ticker, col, d) {
       const sub = category.sub_scores || {};
       const max = category.max_pts || {};
       rows = [
-        subScoreBar("Valuation",          sub.valuation,          max.valuation),
+        subScoreBar("Forward P/E",        sub.fwd_pe,             max.fwd_pe),
+        subScoreBar("PEG",                sub.peg,                max.peg),
+        subScoreBar("P/S (growth-adj)",   sub.growth_adj_ps,      max.growth_adj_ps),
         bonusRow("Analyst Upside",        sub.analyst_upside,     max.analyst_upside),
       ].join("");
       break;
