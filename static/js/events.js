@@ -80,7 +80,7 @@ function shortDate(iso) {
   return m ? `${_MONTHS[m]} ${d}` : (iso || "");
 }
 
-function earningsRow(ev, today, yesterday) {
+function earningsRow(ev, today, yesterday, nowMs) {
   const reported = ev.reported_eps != null;
   const time = fmtTime(ev.datetime);
   let eps, estrep;
@@ -90,8 +90,10 @@ function earningsRow(ev, today, yesterday) {
     eps = `<span class="${beat ? "s-green" : "s-red"}">${beat ? "beat" : "miss"} ${sPct}</span>`;
     estrep = `${ev.eps_estimate != null ? ev.eps_estimate.toFixed(2) : "—"} → ${ev.reported_eps.toFixed(2)}`;
   } else {
-    eps = `<span class="ty-badge ty-upcoming">upcoming</span>`;
-    estrep = "—";
+    // Report time already passed but yahoo hasn't published the actuals yet → "awaiting".
+    const past = new Date(ev.datetime).getTime() <= nowMs;
+    eps = `<span class="ty-badge ${past ? "ty-await" : "ty-upcoming"}">${past ? "awaiting" : "upcoming"}</span>`;
+    estrep = ev.eps_estimate != null ? `${ev.eps_estimate.toFixed(2)} → —` : "—";
   }
   return `<tr>
     ${tickerCell(ev.ticker, ev.name)}
@@ -129,13 +131,34 @@ export function renderTodayYesterday(watchlistData) {
   const yesterday = etDateStr(Date.now() - 864e5);
   const inWindow = d => d === today || d === yesterday;
 
+  const nowMs = Date.now();
   const earnings = [];
   const groups = {};  // keyed by ticker+direction → aggregated insider activity
   for (const [ticker, d] of Object.entries(watchlistData || {})) {
     if (!d) continue;
     const name = d.snapshot?.name || "";
+    const seenDates = new Set();
     for (const ev of (d.snapshot?.earnings_events || [])) {
-      if (inWindow(ev.date)) earnings.push({ ...ev, ticker, name });
+      if (inWindow(ev.date)) { earnings.push({ ...ev, ticker, name }); seenDates.add(ev.date); }
+    }
+    // get_earnings_dates drops the upcoming row for a day around the report — backfill from the
+    // stable quote-summary next-earnings datetime so a name reporting today doesn't vanish.
+    const ne = d.snapshot?.next_earnings;
+    if (ne) {
+      const neDate = new Date(ne).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      if (inWindow(neDate) && !seenDates.has(neDate)) {
+        // Backfill the actual from earnings_history, but only if its quarter-end sits ≤70 days
+        // before the report — i.e. it's THIS report's quarter, not a stale prior one (yahoo lags
+        // the newest quarter into earnings_history per-ticker; without the gate AAPL would show
+        // last quarter's beat as today's).
+        const lr = d.snapshot?.latest_earnings_result;
+        let rep = null, est = d.snapshot?.next_earnings_eps_est ?? null, surp = null;
+        if (lr && lr.quarter) {
+          const gapDays = (new Date(ne) - new Date(lr.quarter)) / 864e5;
+          if (gapDays >= 0 && gapDays <= 70) { rep = lr.eps_actual; est = lr.eps_estimate; surp = lr.surprise_pct; }
+        }
+        earnings.push({ ticker, name, date: neDate, datetime: ne, eps_estimate: est, reported_eps: rep, surprise_pct: surp });
+      }
     }
     for (const tx of (d.insider_transactions || [])) {
       const filed = (tx.filing_date || "").slice(0, 10);
@@ -158,7 +181,7 @@ export function renderTodayYesterday(watchlistData) {
 
   const eHead = `<th>Ticker</th><th>When</th><th>Time</th><th>EPS</th><th class="ty-num">Est → Rep</th>`;
   const iHead = `<th>Ticker</th><th>When</th><th>Side</th><th class="ty-num">Value</th><th>Role</th><th>Traded</th>`;
-  const eTable = tyTable(eHead, earnings.map(e => earningsRow(e, today, yesterday)), "No earnings today or yesterday.", 5);
+  const eTable = tyTable(eHead, earnings.map(e => earningsRow(e, today, yesterday, nowMs)), "No earnings today or yesterday.", 5);
   const iTable = tyTable(iHead, insiders.map(g => insiderRow(g, today, yesterday)), "No insider trades today or yesterday.", 6);
 
   return `<section class="cat-section">

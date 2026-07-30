@@ -390,24 +390,40 @@ def _compute_earnings_events(t: yf.Ticker, limit: int = 12) -> list[dict]:
 # ── Earnings execution track record ───────────────────────────────────────────
 
 
-def _compute_earnings_beat_rate(t: yf.Ticker, quarters: int = 4) -> float | None:
+def _compute_earnings_history_stats(t: yf.Ticker, quarters: int = 4) -> tuple[float | None, dict | None]:
+    """(beat_rate over the last N quarters, latest quarter's actual-vs-estimate).
+
+    The latest-result half is a fallback for the just-reported EPS: get_earnings_dates transiently
+    drops the report row for ~a day around a release, but earnings_history often already carries the
+    actual — the "Today & Yesterday" section uses it (gated on the quarter matching the report) so a
+    name that reported today shows beat/miss instead of a stale "awaiting".
+    """
     try:
         df = t.earnings_history
         if df is None or df.empty:
-            return None
+            return None, None
         recent = df.tail(quarters)
         vals = [
             (a, e)
             for a, e in zip(recent["epsActual"], recent["epsEstimate"], strict=False)
             if pd.notna(a) and pd.notna(e)
         ]
-        if not vals:
-            return None
-        beats = sum(1 for a, e in vals if a > e)
-        return beats / len(vals)
+        beat_rate = (sum(1 for a, e in vals if a > e) / len(vals)) if vals else None
+
+        last_ts, last = df.index[-1], df.iloc[-1]
+        surp = _f(last.get("surprisePercent"))  # earnings_history is a fraction; events is percent
+        latest = {
+            "quarter": last_ts.strftime("%Y-%m-%d") if pd.notna(last_ts) else None,
+            "eps_actual": _f(last.get("epsActual")),
+            "eps_estimate": _f(last.get("epsEstimate")),
+            "surprise_pct": surp * 100 if surp is not None else None,
+        }
+        if latest["eps_actual"] is None or latest["quarter"] is None:
+            latest = None
+        return beat_rate, latest
     except Exception as exc:
-        log.debug("earnings-beat-rate computation failed: %s", exc)
-        return None
+        log.debug("earnings-history stats computation failed: %s", exc)
+        return None, None
 
 
 # ── Analyst estimate revisions ────────────────────────────────────────────────
@@ -463,6 +479,18 @@ def _fetch_recommendation_counts(t: yf.Ticker) -> dict:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
+def _compute_next_earnings_estimate(t: yf.Ticker) -> float | None:
+    """Consensus EPS estimate for the upcoming/just-reported quarter (yfinance calendar). Lets the
+    'awaiting' rows show what was expected while the actual is still absent from yahoo's feed."""
+    try:
+        cal = t.calendar
+        if isinstance(cal, dict):
+            return _f(cal.get("Earnings Average"))
+    except Exception as exc:
+        log.debug("earnings-estimate (calendar) fetch failed: %s", exc)
+    return None
+
+
 def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict:
     t = yf.Ticker(ticker)
     info = t.info or {}
@@ -481,13 +509,15 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
     # one across threads serializes internally (a shared session/cache lock), erasing the gain.
     with ThreadPoolExecutor(max_workers=4) as ex:
         fut_dilution = ex.submit(_compute_dilution_rate, yf.Ticker(ticker))
-        fut_beat = ex.submit(_compute_earnings_beat_rate, yf.Ticker(ticker))
+        fut_beat = ex.submit(_compute_earnings_history_stats, yf.Ticker(ticker))
         fut_eps = ex.submit(_compute_eps_estimate_revision, yf.Ticker(ticker))
         fut_rec = ex.submit(_fetch_recommendation_counts, yf.Ticker(ticker))
+        fut_qest = ex.submit(_compute_next_earnings_estimate, yf.Ticker(ticker))
         dilution_rate = fut_dilution.result()
-        earnings_beat_rate = fut_beat.result()
+        earnings_beat_rate, latest_earnings_result = fut_beat.result()
         eps_estimate_curr_fy, eps_estimate_curr_fy_90d_ago = fut_eps.result()
         _rec_counts = fut_rec.result()
+        next_earnings_eps_est = fut_qest.result()
 
     returns = _compute_returns(ticker, hist)
     pct_from_1w_high = _compute_1w_pct(ticker, price, hist)
@@ -511,6 +541,13 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
     pct_from_52w_high = (price - week52_high) / week52_high if (price and week52_high) else None
 
     day_change_pct = _f(info.get("regularMarketChangePercent"))
+
+    # Next-earnings datetime from the quote summary — more stable than get_earnings_dates around
+    # the report window (yfinance drops the upcoming row for a day or so right after a company
+    # reports, before the actuals land), so the "Today & Yesterday" section keys its upcoming
+    # earnings off this and only pulls beat/miss from earnings_events.
+    _earn_ts = info.get("earningsTimestampStart") or info.get("earningsTimestamp")
+    next_earnings = pd.Timestamp(_earn_ts, unit="s", tz="UTC").isoformat() if _earn_ts else None
 
     ath = week52_high
 
@@ -582,6 +619,9 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         **_rec_counts,
         "price_suspect": price_suspect,
         "returns": returns,
+        "next_earnings": next_earnings,
+        "next_earnings_eps_est": next_earnings_eps_est,
+        "latest_earnings_result": latest_earnings_result,
         "insider_transactions": [],
         "earnings_dates": [],
         "earnings_events": [],
