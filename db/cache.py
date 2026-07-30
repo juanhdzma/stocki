@@ -237,8 +237,10 @@ async def set_last_fetch(session: AsyncSession, ticker: str, data_type: str) -> 
 
 
 async def should_fetch(
-    session: AsyncSession, ticker: str, data_type: str, max_age: timedelta
+    session: AsyncSession, ticker: str, data_type: str, max_age: timedelta, force: bool = False
 ) -> bool:
+    if force:
+        return True
     last = await get_last_fetch(session, ticker, data_type)
     if last is None:
         return True

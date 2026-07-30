@@ -144,7 +144,7 @@ async def refresh_one(ticker: str, hist=None, force: bool = False) -> None:
                 log.info("[%s] insider transactions cached", ticker)
                 txs = None
 
-            if await should_fetch(session, ticker, "earnings", EARNINGS_TTL):
+            if await should_fetch(session, ticker, "earnings", EARNINGS_TTL, force=force):
                 log.info("[%s] fetching earnings", ticker)
                 try:
                     earnings_events = await asyncio.to_thread(fetch_earnings, ticker)
