@@ -3,6 +3,8 @@ import { scoreColor, scoreColorVar, scoreLabel, actionBadge, pctScoreColor } fro
 import { comboFundamentalsSvg, renderPriceOverview, renderPriceCharts, analystBar } from "./charts.js";
 import { state } from "./state.js";
 
+const PRICE_CACHE_CAP = 8;  // most-recently-opened tickers kept in priceHistoryCache
+
 function statRow(label, valueText, colorPct) {
   const pct = colorPct != null ? Math.max(0, Math.min(100, colorPct)) : 0;
   const barColor = colorPct != null ? scoreColorVar(colorPct) : "var(--null)";
@@ -144,6 +146,10 @@ async function loadPriceTrend(ticker) {
       return;
     }
     state.priceHistoryCache[ticker] = points;
+    // Bound the cache: each entry is ~250 daily points, and it otherwise grows for every
+    // ticker ever opened. Keep the most recent PRICE_CACHE_CAP, evict oldest (FIFO).
+    const cached = Object.keys(state.priceHistoryCache);
+    if (cached.length > PRICE_CACHE_CAP) delete state.priceHistoryCache[cached[0]];
     el.innerHTML = renderPriceCharts(points, ticker);
   } catch (e) {
     el.innerHTML = `<div class="trend-chart"><div class="subtext" style="font-size:11px">Failed to load price history</div></div>`;

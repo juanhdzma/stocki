@@ -1,6 +1,6 @@
 import { state } from "./state.js";
-import { timeAgo } from "./format.js";
-import { _toggleSort, renderTickerTable } from "./tables.js";
+import { timeAgo, escapeHtml } from "./format.js";
+import { _toggleSort, renderTickerTable, renderRow, renderStatusSymbol } from "./tables.js";
 import { render, loadPriceTrend } from "./cards.js";
 import { buildScoreTooltip, buildDeltaTooltip, buildBuyTargetTooltip } from "./tooltips.js";
 import { showOverlay, hideTooltip } from "./overlay.js";
@@ -19,7 +19,7 @@ function setWlSort(col) {
   [state.wlSortCol, state.wlSortDir] = _toggleSort(state.wlSortCol, state.wlSortDir, col);
   sessionStorage.setItem("wlSortCol", state.wlSortCol);
   sessionStorage.setItem("wlSortDir", state.wlSortDir);
-  renderHomeSections();
+  renderTables();
 }
 
 function filteredWatchlist() {
@@ -39,7 +39,7 @@ function filteredWatchlist() {
 function setWlFilter(dim, value) {
   state.wlFilters[dim] = value;
   sessionStorage.setItem("wlFilters", JSON.stringify(state.wlFilters));
-  renderHomeSections();
+  renderWlSection();  // filters only touch the watchlist table
   if (dim === "search") {  // re-render recreates the input — restore focus + caret
     const el = document.getElementById("wl-search");
     if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
@@ -49,12 +49,12 @@ function setWlFilter(dim, value) {
 function clearWlFilters() {
   state.wlFilters = { action: "", signal: "", sector: "", flag: "", search: "" };
   sessionStorage.setItem("wlFilters", JSON.stringify(state.wlFilters));
-  renderHomeSections();
+  renderWlSection();
 }
 
 function renderWlFilterBar() {
   const f = state.wlFilters;
-  const opt = (v, label, cur) => `<option value="${v}"${v === cur ? " selected" : ""}>${label}</option>`;
+  const opt = (v, label, cur) => `<option value="${escapeHtml(v)}"${v === cur ? " selected" : ""}>${escapeHtml(label)}</option>`;
   const sectors = [...new Set(state.watchlist.map(t => state.watchlistData[t]?.snapshot?.sector).filter(Boolean))].sort();
   const actions = [["STRONG", "Strong"], ["SOLID", "Solid"], ["FAIR", "Fair"], ["WEAK", "Weak"], ["AVOID", "Avoid"]];
   const flagLabels = { new: "NEW", rev: "REV↓", cyclical: "CYCLICAL", expensive: "$$$", earnings: "Earnings soon", price: "PRICE?" };
@@ -86,6 +86,8 @@ function rowActions(t) {
     <button class="btn-remove" onclick="removeTicker('${t}')">✕</button>`;
 }
 
+// The home is split into independent mounts so a sort/filter/star only re-renders the
+// affected table, not the market bar + Today/Yesterday + both tables on every interaction.
 function renderHomeSections() {
   const dash = document.getElementById("dashboard");
 
@@ -94,29 +96,50 @@ function renderHomeSections() {
     return;
   }
 
-  let html = renderMarketBar(state.market, state.watchlistData, state.homeLoadedAt);
-  html += renderTodayYesterday(state.watchlistData);
+  dash.innerHTML = `<div id="market-mount"></div><div id="events-mount"></div><div id="fav-mount"></div><div id="wl-mount"></div>`;
+  renderMarketSection();
+  renderEventsSection();
+  renderFavSection();
+  renderWlSection();
+}
 
-  if (state.favorites.length) {
-    html += `<section class="cat-section watchlist-section">
-      <h2>★ Favorites <span class="subtext" style="font-size:13px;font-weight:400">${state.favorites.length}</span></h2>
-      ${renderTickerTable(state.favorites, state.wlSortCol, state.wlSortDir, "setWlSort", rowActions)}
-    </section>`;
-  }
+function renderMarketSection() {
+  const el = document.getElementById("market-mount");
+  if (el) el.innerHTML = renderMarketBar(state.market, state.watchlistData, state.homeLoadedAt);
+}
 
-  if (state.watchlist.length) {
-    const wlTickers = filteredWatchlist();
-    html += `<section class="cat-section watchlist-section">
+function renderEventsSection() {
+  const el = document.getElementById("events-mount");
+  if (el) el.innerHTML = renderTodayYesterday(state.watchlistData);
+}
+
+function renderFavSection() {
+  const el = document.getElementById("fav-mount");
+  if (!el) return;
+  el.innerHTML = state.favorites.length
+    ? `<section class="cat-section watchlist-section">
+        <h2>★ Favorites <span class="subtext" style="font-size:13px;font-weight:400">${state.favorites.length}</span></h2>
+        ${renderTickerTable(state.favorites, state.wlSortCol, state.wlSortDir, "setWlSort", rowActions)}
+      </section>`
+    : "";
+}
+
+function renderWlSection() {
+  const el = document.getElementById("wl-mount");
+  if (!el) return;
+  if (!state.watchlist.length) { el.innerHTML = ""; return; }
+  const wlTickers = filteredWatchlist();
+  el.innerHTML = `<section class="cat-section watchlist-section">
       <h2>Watchlist <span class="subtext" style="font-size:13px;font-weight:400">${wlTickers.length}/${state.watchlist.length}</span></h2>
       ${renderWlFilterBar()}
       ${wlTickers.length
         ? renderTickerTable(wlTickers, state.wlSortCol, state.wlSortDir, "setWlSort", rowActions)
         : `<p class="subtext center" style="margin:24px 0">No results for this filter.</p>`}
     </section>`;
-  }
-
-  dash.innerHTML = html;
 }
+
+// Both tables share one sort/membership, so sort + star re-render the pair (but nothing else).
+function renderTables() { renderFavSection(); renderWlSection(); }
 
 async function loadStatus(tickers) {
   if (!tickers.length) return;
@@ -158,15 +181,21 @@ async function showHome() {
   renderHomeSections();
 }
 
+function flashInvalid(input) {
+  input.classList.add("input-invalid");
+  setTimeout(() => input.classList.remove("input-invalid"), 1200);
+}
+
 async function handleAddTicker() {
   const input = document.getElementById("add-input");
   if (!input) return;
   const ticker = input.value.trim().toUpperCase();
-  if (!ticker || !/^[A-Z0-9.]{1,10}$/.test(ticker)) { input.value = ""; return; }
-  if (state.favorites.includes(ticker) || state.watchlist.includes(ticker)) { input.value = ""; return; }
+  if (!ticker || !/^[A-Z0-9.]{1,10}$/.test(ticker)) { flashInvalid(input); return; }
+  if (state.favorites.includes(ticker) || state.watchlist.includes(ticker)) { flashInvalid(input); input.value = ""; return; }
 
+  const res = await fetch(`/api/lists/${ticker}`, {method: "POST"}).catch(() => null);
+  if (!res || !res.ok) { flashInvalid(input); return; }  // keep the text so the user can retry
   input.value = "";
-  await fetch(`/api/lists/${ticker}`, {method: "POST"});
   state.watchlist.push(ticker);
   state.watchlistData[ticker] = null;
   renderHomeSections();
@@ -174,8 +203,8 @@ async function handleAddTicker() {
   try {
     await fetch("/api/lookup/" + ticker);
     const allTickers = [...new Set([...state.favorites, ...state.watchlist])];
-    const res = await fetch("/api/watchlist?tickers=" + allTickers.join(","));
-    state.watchlistData = await res.json();
+    const r = await fetch("/api/watchlist?tickers=" + allTickers.join(","));
+    Object.assign(state.watchlistData, await r.json());
   } catch (e) {
     console.error("Fetch failed for", ticker, e);
   }
@@ -183,8 +212,11 @@ async function handleAddTicker() {
   renderHomeSections();
 }
 
+// Mutations are pessimistic: hit the server first, mutate local state only on success, so a
+// failed request can't leave the client diverged from the DB until reload.
 async function removeTicker(ticker) {
-  await fetch(`/api/lists/${ticker}`, {method: "DELETE"});
+  const res = await fetch(`/api/lists/${ticker}`, {method: "DELETE"}).catch(() => null);
+  if (!res || !res.ok) { alert("Failed to remove " + ticker); return; }
   state.favorites = state.favorites.filter(t => t !== ticker);
   state.watchlist = state.watchlist.filter(t => t !== ticker);
   delete state.watchlistData[ticker];
@@ -194,7 +226,8 @@ async function removeTicker(ticker) {
 async function toggleFavorite(ticker) {
   const makeFav = !state.favorites.includes(ticker);
   const targetList = makeFav ? "favorite" : "watchlist";
-  await fetch(`/api/lists/${ticker}?list_type=${targetList}`, {method: "PATCH"});
+  const res = await fetch(`/api/lists/${ticker}?list_type=${targetList}`, {method: "PATCH"}).catch(() => null);
+  if (!res || !res.ok) { alert("Failed to update " + ticker); return; }
   if (makeFav) {
     state.watchlist = state.watchlist.filter(t => t !== ticker);
     if (!state.favorites.includes(ticker)) state.favorites.push(ticker);
@@ -202,12 +235,12 @@ async function toggleFavorite(ticker) {
     state.favorites = state.favorites.filter(t => t !== ticker);
     if (!state.watchlist.includes(ticker)) state.watchlist.push(ticker);
   }
-  renderHomeSections();
+  renderTables();  // membership change only — market bar / events unaffected
 }
 
 // ── Detail view ───────────────────────────────────────────────────────────────
 async function _fetchAndRenderDetail(ticker) {
-  const res = await fetch("/api/watchlist?tickers=" + ticker);
+  const res = await fetch("/api/watchlist?tickers=" + ticker + "&full=1");  // detail needs annuals/quarterlies
   if (!res.ok) return;
   const raw = await res.json();
   const payload = raw[ticker];
@@ -250,18 +283,21 @@ async function handleRefreshAll() {
   // watchlist data for tickers whose refresh just finished (in_flight -> not in_flight).
   let prevStatus = { ...state.tickerStatus };
 
+  let pollErrors = 0;
   while (true) {
     await new Promise(r => setTimeout(r, 2000));
+    let justDone = [];
     try {
       const stRes = await fetch("/api/status?tickers=" + allTickers.join(","));
       const newStatus = await stRes.json();
 
-      const justDone = allTickers.filter(
+      justDone = allTickers.filter(
         t => _isInFlight(prevStatus, t) && !_isInFlight(newStatus, t)
       );
 
       state.tickerStatus = newStatus;
       prevStatus   = newStatus;
+      pollErrors = 0;
 
       if (justDone.length) {
         const wlRes = await fetch("/api/watchlist?tickers=" + justDone.join(","));
@@ -269,17 +305,31 @@ async function handleRefreshAll() {
       }
     } catch (e) {
       console.error("Poll failed:", e);
+      // Sustained network failure would otherwise spin forever (status never updates, so
+      // `_running` stays stale-truthy). Bail after a few consecutive errors.
+      if (++pollErrors >= 5) break;
     }
-    renderHomeSections();
+    // Incremental paint: refresh every status symbol, and swap the full row only for
+    // tickers that just finished. No table/market/events rebuild, no re-sort jump each tick.
+    for (const t of allTickers) {
+      const cell = document.getElementById("stat-" + t);
+      if (cell) cell.innerHTML = renderStatusSymbol(state.tickerStatus[t]);
+    }
+    for (const t of justDone) {
+      const rowEl = document.getElementById("row-" + t);
+      if (rowEl) rowEl.outerHTML = renderRow(t, rowActions);
+    }
     if (!state.tickerStatus._running) break;
   }
 
-  // Safety net: guarantee everything is current once the refresh is done, in case
-  // any ticker's in_flight window was missed between two 2s polls.
+  // Safety net: guarantee everything is current once the refresh is done, in case any
+  // ticker's in_flight window was missed. Merge (don't replace) so tickers added mid-refresh
+  // survive, and skip the home repaint if the user has navigated into a detail view.
   try {
     const wlRes = await fetch("/api/watchlist?tickers=" + allTickers.join(","));
-    state.watchlistData = await wlRes.json();
-    renderHomeSections();
+    Object.assign(state.watchlistData, await wlRes.json());
+    const hash = window.location.hash;
+    if (hash === "" || hash === "#home") renderHomeSections();
   } catch (e) {
     console.error("Final refresh failed:", e);
   }
@@ -343,6 +393,7 @@ function navigate(hash) {
 
 function onRoute() {
   hideTooltip();
+  state.chartRegistry = {};  // previous view's chart hover-data — its SVGs are gone from the DOM
   const hash = window.location.hash;
   if (hash.startsWith("#ticker/")) {
     const t = hash.slice(8).toUpperCase().replace(/[^A-Z0-9.]/g, "");
