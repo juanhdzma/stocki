@@ -101,6 +101,12 @@ async def _should_fetch_snapshot(session, ticker: str, force: bool = False) -> b
 
 
 async def refresh_one(ticker: str, hist=None, force: bool = False) -> None:
+    if ticker in _in_flight:
+        # A single-ticker POST /api/refresh/{ticker} racing the bulk refresh_all on the same
+        # ticker would double-write the snapshot and let whichever finishes first flip the
+        # status light while the other is still writing. Skip the duplicate.
+        log.info("[%s] refresh already in flight, skipping", ticker)
+        return
     _in_flight.add(ticker)
     errs: set[str] = _errors.get(ticker, set()).copy()
     try:

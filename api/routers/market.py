@@ -4,6 +4,7 @@ import asyncio
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import yfinance
 from fastapi import APIRouter
@@ -52,7 +53,9 @@ def _f(v) -> float | None:
 
 
 def _fetch_all() -> dict:
-    return {key: _one(sym) for key, sym in _SYMBOLS.items()}
+    # Four independent network round-trips — fan them out instead of walking serially.
+    with ThreadPoolExecutor(max_workers=len(_SYMBOLS)) as ex:
+        return dict(ex.map(lambda kv: (kv[0], _one(kv[1])), _SYMBOLS.items()))
 
 
 @router.get("/market")
