@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -103,7 +104,7 @@ async def move_ticker(ticker: str, list_type: str, session: AsyncSession = Depen
 
 
 @router.get("/watchlist")
-async def get_watchlist_data(tickers: str = ""):
+async def get_watchlist_data(tickers: str = "", full: bool = False):
     ticker_list = parse_ticker_csv(tickers)
     if not ticker_list:
         return {}
@@ -117,20 +118,31 @@ async def get_watchlist_data(tickers: str = ""):
         snap_result = await session.execute(
             select(MarketSnapshot).where(MarketSnapshot.ticker.in_(ticker_list))
         )
-        snap_rows = {row.ticker: row for row in snap_result.scalars().all()}
+        snap_rows = {r.ticker: (r.data_json, r.refreshed_at) for r in snap_result.scalars().all()}
         funds_map = await read_all_fundamentals_batch(session, ticker_list)
         history_map = await read_score_history_reference_batch(
             session, ticker_list, week_ago, today
         )
 
-    results = {}
-    for ticker in ticker_list:
-        row = snap_rows.get(ticker)
-        if not row:
-            results[ticker] = None
-            continue
-        snap = json.loads(row.data_json)
-        results[ticker] = build_payload(
-            ticker, snap, funds_map.get(ticker, []), row.refreshed_at, history_map.get(ticker)
-        )
-    return results
+    # compute_all (multi-scorer slope math) runs per ticker inside build_payload and is CPU-bound;
+    # a 200-ticker load would otherwise block the event loop back-to-back. Offload the whole build.
+    def _build() -> dict:
+        out = {}
+        for ticker in ticker_list:
+            rec = snap_rows.get(ticker)
+            if not rec:
+                out[ticker] = None
+                continue
+            data_json, refreshed_at = rec
+            snap = json.loads(data_json)
+            out[ticker] = build_payload(
+                ticker,
+                snap,
+                funds_map.get(ticker, []),
+                refreshed_at,
+                history_map.get(ticker),
+                full=full,
+            )
+        return out
+
+    return await asyncio.to_thread(_build)

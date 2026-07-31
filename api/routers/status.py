@@ -20,14 +20,12 @@ async def get_status(tickers: str = ""):
         return {}
 
     async with AsyncSessionLocal() as session:
+        # Only existence matters here (has_snap below), and this endpoint is polled every 2s
+        # during a refresh — selecting/parsing the full data_json JSON was pure waste.
         snap_rows = await session.execute(
-            select(MarketSnapshot.ticker, MarketSnapshot.data_json).where(
-                MarketSnapshot.ticker.in_(ticker_list)
-            )
+            select(MarketSnapshot.ticker).where(MarketSnapshot.ticker.in_(ticker_list))
         )
-        snap_map: dict[str, dict] = {}
-        for row in snap_rows:
-            snap_map[row.ticker] = json.loads(row.data_json)
+        snap_map: set[str] = {row.ticker for row in snap_rows}
 
         fund_rows = await session.execute(
             select(FundamentalsHistory.ticker, FundamentalsHistory.data_json).where(

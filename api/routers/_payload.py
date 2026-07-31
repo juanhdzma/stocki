@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date
+from datetime import date, timedelta
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ def build_payload(
     funds: list[dict],
     refreshed_at: str | None = None,
     week_ago_scores: dict | None = None,
+    full: bool = True,
 ) -> dict:
     from core.scorers.composite import compute_all, diff_scores
 
@@ -41,18 +42,31 @@ def build_payload(
         log.warning("[%s] score computation failed: %s", ticker, exc)
         scores = None
     score_change = diff_scores(week_ago_scores, scores) if scores is not None else None
+
+    # The multi-ticker home payload (full=False) never renders annuals/quarterlies and only shows
+    # the last ~2 ET days of insider filings (events.js), yet the whole thing stays resident in
+    # state.watchlistData for the session. Trim it: the detail view re-fetches with full=1.
+    insider_tx = snap.get("insider_transactions", [])
+    if not full:
+        cutoff = (date.today() - timedelta(days=3)).isoformat()
+        insider_tx = [t for t in insider_tx if (t.get("filing_date") or "")[:10] >= cutoff]
+
     return {
         "snapshot": snap_data,
         "returns": snap.get("returns", {}),
         "annuals": [
             {"period": f["period"], **{k: v for k, v in f.items() if k not in ("type", "period")}}
             for f in annuals
-        ],
+        ]
+        if full
+        else [],
         "quarterlies": [
             {"period": f["period"], **{k: v for k, v in f.items() if k not in ("type", "period")}}
             for f in quarterlies
-        ],
-        "insider_transactions": snap.get("insider_transactions", []),
+        ]
+        if full
+        else [],
+        "insider_transactions": insider_tx,
         "scores": scores,
         "score_change": score_change,
         "refreshed_at": refreshed_at,
