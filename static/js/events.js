@@ -23,7 +23,7 @@ function dayTag(date, today, yesterday) {
 
 function tickerCell(ticker, name) {
   const company = name ? `<div class="ty-company">${escapeHtml(name)}</div>` : "";
-  return `<td><div class="ticker-link" onclick="navigate('#ticker/${ticker}')">${ticker}</div>${company}</td>`;
+  return `<td><a class="ticker-link" href="#ticker/${ticker}">${ticker}</a>${company}</td>`;
 }
 
 // openinsider trade_type looks like "P - Purchase" / "S - Sale"; classify by the leading code.

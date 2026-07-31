@@ -657,13 +657,32 @@ tbody tr:hover td { background: rgba(255,255,255,0.02); }
 }
 
 .ticker-link {
+  display: inline-block;
   color: var(--blue);
   font-weight: 700;
   letter-spacing: 0.05em;
   cursor: pointer;
+  text-decoration: none;
   transition: opacity 0.12s;
 }
 .ticker-link:hover { opacity: 0.8; text-decoration: underline; }
+
+/* Horizontal scroll container so the wide watchlist table never forces the whole page sideways. */
+.table-scroll { overflow-x: auto; }
+
+/* Add-ticker input flash for invalid/duplicate/failed submits. */
+.input-invalid { border-color: var(--red) !important; animation: shake 0.3s; }
+@keyframes shake { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+
+/* Keyboard focus visibility (mouse hover unaffected). */
+.btn:focus-visible,
+.btn-star:focus-visible,
+.btn-remove:focus-visible,
+.ticker-link:focus-visible,
+.watchlist-table th.sortable-th:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
 
 .btn-remove {
   background: none;
