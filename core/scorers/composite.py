@@ -152,10 +152,10 @@ def _composite_long(
 # used as an anchor LEVEL, not the binary above/below-MA200 gate bt_lab found doesn't separate winners
 # from losers — beaten-down names rebound hardest). Falls back to whichever of the two is measurable.
 # Either anchor is then discounted by a margin of safety that STACKS two independent risk signals
-# (summed, capped at _BT_MOS_CAP): (1) how much the name moves — realized_vol = the average of its
-# 1m/6m/12m annualized realized vol, three discrete tiers low/mid/high → 0/12/25% (a calm AAPL ~25%
-# buys at the raw anchor; a wild SNDK ~110% needs 25% deeper), and (2) how much analysts DISAGREE —
-# the low→high spread over the median, tiers low/mid/high → 0/8/15%. High dispersion is the paper's
+# (summed, no cap — max 0.20+0.12=0.32): (1) how much the name moves — realized_vol = the average of
+# its 1m/6m/12m annualized realized vol, three discrete tiers low/mid/high → 0/10/20% (a calm AAPL ~25%
+# buys at the raw anchor; a wild SNDK ~110% needs 20% deeper), and (2) how much analysts DISAGREE —
+# the low→high spread over the median, tiers low/mid/high → 0/6/12%. High dispersion is the paper's
 # key finding (Palley/Steffen/Zhang, Mgmt Science 2025): a wide range doesn't make the consensus
 # merely noisier, its correlation with forward return flips NEGATIVE (stale post-bad-news targets
 # inflate it), so a wide range is a warning demanding a deeper entry, not an opportunity. Tried and
@@ -166,18 +166,18 @@ _BUY_TARGET_DEEP_DD = (
     -0.30
 )  # fallback drawdown from the 52w high when analyst targets aren't trusted
 _BT_MIN_ANALYSTS = 10  # below this, the target distribution is too thin to build a percentile from
-_BT_PERCENTILE = 0.10  # target the ~p10 of the analyst distribution: low + (p/0.5)*(median − low)
+_BT_PERCENTILE = 0.175  # target ~p17.5 of the analyst distribution: low + (p/0.5)*(median − low)
 _BT_VOL_MID = 0.40  # realized vol ≥ this → "mid" tier; below → "low"
 _BT_VOL_HIGH = 0.75  # realized vol ≥ this → "high" tier
-_BT_VOL_MOS = {"low": 0.0, "mid": 0.12, "high": 0.25}  # extra margin of safety per volatility tier
+_BT_VOL_MOS = {"low": 0.0, "mid": 0.10, "high": 0.20}  # extra margin of safety per volatility tier
 # Analyst-target dispersion, measured as the low→high spread over the median. Palley/Steffen/Zhang
 # (Mgmt Science 2025): a WIDE spread doesn't just make the consensus noisier — its correlation with
 # forward return flips negative (stale, un-revised targets inflate it after bad news). So a wide
 # range is a warning, not an opportunity: demand a deeper entry. This discount stacks on the vol one.
 _BT_DISP_MID = 0.40  # (high−low)/median ≥ this → "mid" dispersion; below → "low"
 _BT_DISP_HIGH = 0.80  # ≥ this → "high" dispersion
-_BT_DISP_MOS = {"low": 0.0, "mid": 0.08, "high": 0.15}  # extra margin of safety per dispersion tier
-_BT_MOS_CAP = 0.35  # total margin of safety (vol + dispersion) is capped here
+_BT_DISP_MOS = {"low": 0.0, "mid": 0.06, "high": 0.12}  # extra margin of safety per dispersion tier
+# no total cap: vol (max 0.20) + dispersion (max 0.12) tops out at 0.32, low enough to just sum
 
 
 def _vol_tier(vol: float | None) -> tuple[str, float]:
@@ -229,7 +229,8 @@ def _buy_target(snapshot: dict) -> dict | None:
             disp = (high - low) / p50  # relative low→high spread — drives the dispersion discount
             disp_level, disp_mos = _disp_tier(disp)
         detail = {
-            "method": "p10",
+            "method": "analyst",
+            "percentile": _BT_PERCENTILE,
             "analysts": nac,
             "low": round(low, 2),
             "p50": round(p50, 2),
@@ -255,7 +256,7 @@ def _buy_target(snapshot: dict) -> dict | None:
             "sma200": round(sma200, 2) if sma200 else None,
         }
 
-    mos = min(_BT_MOS_CAP, vol_mos + disp_mos)  # vol + dispersion discounts stack, capped
+    mos = vol_mos + disp_mos  # vol + dispersion discounts stack (max 0.32, no cap needed)
     target = anchor * (1 - mos)
     vw = snapshot.get("realized_vol_windows") or {}
     detail.update(
@@ -270,6 +271,8 @@ def _buy_target(snapshot: dict) -> dict | None:
             "vol_high": _BT_VOL_HIGH,
             "disp_mid": _BT_DISP_MID,
             "disp_high": _BT_DISP_HIGH,
+            "vol_mos_tiers": _BT_VOL_MOS,
+            "disp_mos_tiers": _BT_DISP_MOS,
             "mos": round(mos, 4),
         }
     )

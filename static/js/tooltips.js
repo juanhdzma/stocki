@@ -285,7 +285,6 @@ export function deltaBar(label, val, max) {
 
 export function buildBuyTargetTooltip(ticker, d) {
   const bt = d?.scores?.buy_target;
-  const price = d?.snapshot?.price;
   if (!bt || bt.price == null) {
     return `<div class="tt-head"><span class="tt-ticker">${ticker}</span><span class="subtext" style="margin-left:8px">No buy target</span></div>`;
   }
@@ -298,39 +297,75 @@ export function buildBuyTargetTooltip(ticker, d) {
   const sigCls = isBuy ? "s-green" : "s-red";
   const sigTxt = isBuy ? "BUY" : "WAIT";
 
-  const volPct = bt.vol != null ? ` avg ${(bt.vol * 100).toFixed(0)}%` : "";
-  const volMos = bt.vol_mos ?? bt.mos;
-  const volMosPct = (volMos * 100).toFixed(0);
-  const volCls = { high: "s-red", mid: "s-yellow", low: "s-green", "n/a": "s-red" }[bt.vol_level] || "";
-  const volRow = `<div class="tt-sub-row"><span class="tt-sub-lbl">Volatility <span class="${volCls}">${bt.vol_level || "—"}</span>${volPct}</span><span class="tt-sub-val" style="margin-left:auto">${volMos > 0 ? `−${volMosPct}%` : "no discount"}</span></div>`;
+  const pct = n => (n * 100).toFixed(0);
+  const trim = n => +n.toFixed(2) + "";  // 0.65 → "0.65", 17.5 → "17.5"
 
-  const dispCls = { high: "s-red", mid: "s-yellow", low: "s-green" }[bt.disp_level] || "";
-  const dispPct = bt.disp != null ? ` ${(bt.disp * 100).toFixed(0)}% range` : "";
-  const dispMos = bt.disp_mos ?? 0;
-  const dispMosPct = (dispMos * 100).toFixed(0);
-  const dispRow = bt.disp_level && bt.disp_level !== "n/a"
-    ? `<div class="tt-sub-row"><span class="tt-sub-lbl">Dispersion <span class="${dispCls}">${bt.disp_level}</span>${dispPct}</span><span class="tt-sub-val" style="margin-left:auto">${dispMos > 0 ? `−${dispMosPct}%` : "no discount"}</span></div>`
-    : "";
+  // A three-segment tier bar (green/yellow/red) with a marker at the current value's position.
+  // Segments are equal-width; the marker interpolates inside the active tier. The open-ended top
+  // tier gets a visual cap (high + one mid-tier width) so a marker still lands sensibly.
+  const tierBar = ({ title, valTxt, value, mid, high, tiers, level }) => {
+    const cls = { low: "s-green", mid: "s-yellow", high: "s-red", "n/a": "s-red" }[level] || "";
+    const nowMos = level === "low" ? "0%" : level === "mid" ? `−${pct(tiers.mid)}%`
+      : (level === "high" || level === "n/a") ? `−${pct(tiers.high)}%` : "";
+    let pos = null;
+    if (value != null) {
+      const hiCap = high + (high - mid);
+      const v = Math.max(0, Math.min(value, hiCap));
+      pos = v <= mid ? (v / mid) * 33.33
+        : v <= high ? 33.33 + ((v - mid) / (high - mid)) * 33.33
+          : 66.66 + ((v - high) / (hiCap - high)) * 33.33;
+    }
+    const seg = (bg, on) => `<div style="flex:1;background:${bg};opacity:${on ? 1 : 0.2}"></div>`;
+    const marker = pos != null
+      ? `<div style="position:absolute;top:-3px;bottom:-3px;left:calc(${pos.toFixed(1)}% - 1px);width:2px;background:#fff;box-shadow:0 0 2px #000"></div>`
+      : "";
+    return `<div style="margin-top:7px">
+      <div class="tt-sub-row"><span class="tt-sub-lbl">${title} <span class="subtext">${valTxt}</span></span><span class="tt-sub-val ${cls}" style="margin-left:auto;font-weight:600;white-space:nowrap;flex-shrink:0">${level || "—"} ${nowMos}</span></div>
+      <div style="position:relative;display:flex;height:12px;border-radius:3px;overflow:hidden;margin:3px 0 2px">
+        ${seg("var(--s5)", level === "low")}${seg("var(--s3)", level === "mid")}${seg("var(--s1)", level === "high" || level === "n/a")}${marker}
+      </div>
+      <div style="display:flex;font-size:9px;opacity:.6;white-space:nowrap">
+        <span style="flex:1">low &lt;${pct(mid)}%</span>
+        <span style="flex:1;text-align:center">mid ${pct(mid)}–${pct(high)}%</span>
+        <span style="flex:1;text-align:right">high ≥${pct(high)}%</span>
+      </div></div>`;
+  };
 
   const vw = bt.vol_windows || {};
   const wins = ["1m", "6m", "12m"].filter(k => vw[k] != null);
   const winRow = wins.length
-    ? `<div class="subtext" style="font-size:10px;margin-top:2px">${wins.map(k => `${k} ${(vw[k] * 100).toFixed(0)}%`).join(" · ")} → avg ${(bt.vol * 100).toFixed(0)}%</div>`
-    : (bt.vol == null ? `<div class="subtext" style="font-size:10px;margin-top:2px">history &lt; 1 month → unmeasured, conservative margin</div>` : "");
+    ? `<div class="subtext" style="font-size:9px;opacity:.65;margin-top:1px">${wins.map(k => `${k} ${pct(vw[k])}%`).join(" · ")}</div>`
+    : (bt.vol == null ? `<div class="subtext" style="font-size:9px;opacity:.65;margin-top:1px">history &lt; 1 month → unmeasured, conservative margin</div>` : "");
 
-  const vm = (bt.vol_mid * 100).toFixed(0), vh = (bt.vol_high * 100).toFixed(0);
-  const bands = [["low", `<${vm}%`, "0%"], ["mid", `${vm}–${vh}%`, "−12%"], ["high", `≥${vh}%`, "−25%"]];
-  const legend = `<div class="subtext" style="font-size:10px;display:flex;gap:8px;margin-top:3px">${
-    bands.map(([lvl, rng, m]) => `<span${lvl === bt.vol_level ? ` class="${volCls}" style="font-weight:600"` : ""}>${lvl} ${rng} ${m}</span>`).join("")
-  }</div>`;
+  const volBlock = tierBar({
+    title: "Volatility",
+    valTxt: bt.vol != null ? `${pct(bt.vol)}%` : "n/a",
+    value: bt.vol, mid: bt.vol_mid, high: bt.vol_high,
+    tiers: bt.vol_mos_tiers || {}, level: bt.vol_level,
+  }) + winRow;
+
+  const dispBlock = bt.disp_level && bt.disp_level !== "n/a"
+    ? tierBar({
+      title: "Dispersion",
+      valTxt: bt.disp != null ? `${pct(bt.disp)}%` : "",
+      value: bt.disp, mid: bt.disp_mid, high: bt.disp_high,
+      tiers: bt.disp_mos_tiers || {}, level: bt.disp_level,
+    })
+    : "";
 
   let head;
-  if (bt.method === "p10") {
+  if (bt.method === "analyst") {
+    const pctl = trim(bt.percentile * 100);
+    const wMed = bt.percentile / 0.5, wLow = 1 - wMed;
+    const aPos = bt.p50 > bt.low ? ((bt.anchor - bt.low) / (bt.p50 - bt.low)) * 100 : 50;
     head = `
-      <div class="subtext" style="font-size:11px;margin-bottom:4px">10th percentile of ${bt.analysts} analysts</div>
-      ${row("Low ×0.8", $(bt.low))}
-      ${row("Median ×0.2", $(bt.p50))}
-      ${row("= p10 anchor", `<b>${$(bt.anchor)}</b>`)}`;
+      <div class="tt-sub-row"><span class="tt-sub-lbl" style="white-space:nowrap">Anchor <span class="subtext">p${pctl} · ${bt.analysts} analysts</span></span><span class="tt-sub-val" style="margin-left:auto;font-weight:700">${$(bt.anchor)}</span></div>
+      <div style="position:relative;height:6px;border-radius:3px;margin:4px 0 2px;background:linear-gradient(90deg,var(--s5),var(--s3))">
+        <div style="position:absolute;top:-3px;bottom:-3px;left:calc(${aPos.toFixed(1)}% - 1px);width:2px;background:#fff;box-shadow:0 0 2px #000"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;opacity:.6;white-space:nowrap">
+        <span>Low ${$(bt.low)} ×${trim(wLow)}</span><span>×${trim(wMed)} Median ${$(bt.p50)}</span>
+      </div>`;
   } else {
     const ddPct = bt.dd != null ? (bt.dd * 100).toFixed(0) : "−30";
     head = `
@@ -339,11 +374,8 @@ export function buildBuyTargetTooltip(ticker, d) {
       ${bt.sma200 != null ? row("200-day MA", $(bt.sma200)) : ""}
       ${row(`= anchor (${bt.method === "ma200" ? "MA200" : "−30% zone"})`, `<b>${$(bt.anchor)}</b>`)}`;
   }
-  const body = `${head}${volRow}${dispRow}${winRow}${legend}${row("= Target", `<b>${$(bt.price)}</b>`)}`;
-
-  const cmp = price != null
-    ? `Price today ${$(price)} ${price <= bt.price ? "≤" : ">"} ${$(bt.price)}`
-    : "";
+  const targetRow = `<div class="tt-sub-row"><span class="subtext">−${pct(bt.mos)}%</span><span class="tt-sub-val" style="margin-left:auto;font-weight:700">${$(bt.price)}</span></div>`;
+  const body = `${head}${volBlock}${dispBlock}<div style="margin-top:6px">${targetRow}</div>`;
 
   return `
 <div class="tt-head">
@@ -353,7 +385,6 @@ export function buildBuyTargetTooltip(ticker, d) {
 </div>
 <div class="tt-subs">
   ${body}
-  <div style="border-top:1px solid var(--border);padding-top:5px;margin-top:5px;font-size:11px" class="${sigCls}">${cmp} → ${sigTxt}</div>
 </div>`;
 }
 

@@ -666,9 +666,7 @@ def test_composite_long_cheap_price_does_not_rescue_bad_business():
         "insider_conviction": _mk(50),
     }
     result = _composite_long(base, _mk(100), {})
-    assert result["action"] in ("WEAK", "AVOID"), (
-        "a great price must not rescue a bad business"
-    )
+    assert result["action"] in ("WEAK", "AVOID"), "a great price must not rescue a bad business"
 
 
 def test_composite_long_dip_bonus_rewards_quality_selloff():
@@ -1242,14 +1240,14 @@ def _bt_snap(price, high_52w, ret6=None, **extra):
     return snap
 
 
-def test_buy_target_p10_anchor_widened_by_vol_tiers():
+def test_buy_target_analyst_anchor_widened_by_vol_tiers():
     from core.scorers.composite import _buy_target
 
-    # p10 anchor = low + (0.10/0.5)*(median - low) = 100 + 0.2*(200-100) = 120.
+    # anchor = low + (0.175/0.5)*(median - low) = 100 + 0.35*(200-100) = 135.
     def bt(vol):
         return _buy_target(
             _bt_snap(
-                105.0,
+                120.0,
                 high_52w=300.0,
                 target_low=100.0,
                 target_median=200.0,
@@ -1258,16 +1256,16 @@ def test_buy_target_p10_anchor_widened_by_vol_tiers():
             )
         )
 
-    assert bt(0.30)["vol_level"] == "low" and bt(0.30)["price"] == 120.0  # no discount
-    assert bt(0.50)["vol_level"] == "mid" and bt(0.50)["price"] == 105.6  # 120*0.88
-    assert bt(0.90)["vol_level"] == "high" and bt(0.90)["price"] == 90.0  # 120*0.75
+    assert bt(0.30)["vol_level"] == "low" and bt(0.30)["price"] == 135.0  # no discount
+    assert bt(0.50)["vol_level"] == "mid" and bt(0.50)["price"] == 121.5  # 135*0.90
+    assert bt(0.90)["vol_level"] == "high" and bt(0.90)["price"] == 108.0  # 135*0.80
     assert bt(0.30)["signal"] == "buy" and bt(0.90)["signal"] == "wait"
 
 
 def test_buy_target_p50_falls_back_to_mean_without_median():
     from core.scorers.composite import _buy_target
 
-    # no median -> mean stands in as p50: 100 + 0.2*(200-100) = 120 (baja vol -> no discount).
+    # no median -> mean stands in as p50: 100 + 0.35*(200-100) = 135 (baja vol -> no discount).
     bt = _buy_target(
         _bt_snap(
             105.0,
@@ -1278,7 +1276,7 @@ def test_buy_target_p50_falls_back_to_mean_without_median():
             realized_vol=0.30,
         )
     )
-    assert bt["price"] == 120.0
+    assert bt["price"] == 135.0
 
 
 def test_buy_target_thin_coverage_falls_back_to_drawdown():
@@ -1304,10 +1302,10 @@ def test_buy_target_drawdown_widened_by_vol_tier():
     from core.scorers.composite import _buy_target
 
     # the volatility discount applies to the drawdown fallback too: high vol -> deeper entry.
-    # anchor = w52*0.70 = 70; high tier -> 70*0.75 = 52.5.
+    # anchor = w52*0.70 = 70; high tier -> 70*0.80 = 56.0.
     bt = _buy_target(_bt_snap(70.0, high_52w=100.0, analyst_count=3, realized_vol=0.90))
     assert bt["method"] == "drawdown" and bt["vol_level"] == "high"
-    assert bt["price"] == 52.5
+    assert bt["price"] == 56.0
     assert bt["signal"] == "wait"  # price 70 > 52.5
 
 
@@ -1326,11 +1324,11 @@ def test_buy_target_unmeasurable_vol_is_conservative_not_low():
     from core.scorers.composite import _buy_target
 
     # too little history to measure vol -> "n/a", not "low": apply the full (high) discount.
-    # drawdown anchor 70 * (1 - 0.25) = 52.5, not 70.
+    # drawdown anchor 70 * (1 - 0.20) = 56.0, not 70.
     bt = _buy_target(_bt_snap(95.0, high_52w=100.0, realized_vol=None))
     assert bt["vol_level"] == "n/a"
-    assert bt["mos"] == 0.25
-    assert bt["price"] == 52.5
+    assert bt["mos"] == 0.20
+    assert bt["price"] == 56.0
 
 
 def test_buy_target_none_without_price_or_anchor():
@@ -1657,9 +1655,9 @@ def test_buy_target_high_dispersion_deepens_the_entry():
     assert wide["price"] < tight["price"]  # more disagreement → deeper entry
 
 
-def test_buy_target_mos_is_capped():
-    """vol + dispersion discounts stack but can't exceed the cap, so the target never collapses."""
-    from core.scorers.composite import _BT_MOS_CAP, _buy_target
+def test_buy_target_mos_stacks_uncapped():
+    """vol + dispersion discounts just sum; with the current tiers the max stack is 0.32."""
+    from core.scorers.composite import _buy_target
 
     bt = _buy_target(
         {
@@ -1671,7 +1669,7 @@ def test_buy_target_mos_is_capped():
             "target_high": 300.0,
         }
     )
-    assert bt["mos"] == _BT_MOS_CAP  # high vol (0.25) + high disp (0.15) = 0.40, capped to 0.35
+    assert bt["mos"] == 0.32  # high vol (0.20) + high disp (0.12) = 0.32
 
 
 def test_buy_target_thin_analysts_uses_ma200_when_below_drawdown():
