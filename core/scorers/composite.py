@@ -289,7 +289,7 @@ _CATEGORY_LABELS = {
     "fundamental_momentum": "Growth",
     "value_quality": "Quality",
     "insider_conviction": "Insiders",
-    "price_long": "Sentiment",
+    "price_long": "Valuation",
 }
 
 _MOVER_MIN_DELTA = 0.05

@@ -85,7 +85,9 @@ function earningsRow(ev, today, yesterday, nowMs) {
   const time = fmtTime(ev.datetime);
   let eps, estrep;
   if (reported) {
-    const beat = ev.surprise_pct != null ? ev.surprise_pct > 0 : ev.reported_eps > ev.eps_estimate;
+    const beat = ev.surprise_pct != null
+      ? ev.surprise_pct > 0
+      : (ev.eps_estimate != null && ev.reported_eps > ev.eps_estimate);
     const sPct = ev.surprise_pct != null ? `${ev.surprise_pct >= 0 ? "+" : ""}${ev.surprise_pct.toFixed(1)}%` : "";
     eps = `<span class="${beat ? "s-green" : "s-red"}">${beat ? "beat" : "miss"} ${sPct}</span>`;
     estrep = `${ev.eps_estimate != null ? ev.eps_estimate.toFixed(2) : "—"} → ${ev.reported_eps.toFixed(2)}`;
