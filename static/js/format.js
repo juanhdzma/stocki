@@ -2,26 +2,6 @@
 export const INSIDER_SOURCE = t => `https://openinsider.com/screener?s=${t}`;
 
 // ── Format helpers ────────────────────────────────────────────────────────────
-export function fmtRaw(v, type) {
-  if (v === null || v === undefined) return "—";
-  const n = Number(v);
-  if (isNaN(n)) return String(v);
-  switch (type) {
-    case "pct": return (n * 100).toFixed(1) + "%";
-    case "large": {
-      const abs = Math.abs(n), sign = n < 0 ? "-" : "";
-      if (abs >= 1e9) return sign + (abs / 1e9).toFixed(2) + "B";
-      if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + "M";
-      if (abs >= 1e3) return sign + (abs / 1e3).toFixed(0) + "K";
-      return n.toFixed(0);
-    }
-    case "price":   return "$" + n.toFixed(2);
-    case "decimal": return n.toFixed(2);
-    case "text":    return isNaN(n) ? String(v).replace(/_/g, " ") : n.toFixed(2);
-    default:        return n.toFixed(2);
-  }
-}
-
 export function srcLink(url) {
   if (!url) return "";
   return ` <a href="${url}" target="_blank" rel="noopener" class="src-link">↗</a>`;
