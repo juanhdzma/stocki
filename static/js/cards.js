@@ -250,12 +250,12 @@ function renderInsiderSummary(tickers, raw) {
     const td      = tx.trade_date ? new Date(tx.trade_date) : null;
     const in3m    = td && td >= ago90;
     return `<tr>
-      <td>${tx.trade_date || "—"}</td>
+      <td>${escapeHtml(tx.trade_date || "—")}</td>
       <td>${escapeHtml(tx.insider_name || "—")}</td>
       <td class="subtext">${escapeHtml(tx.title || "—")}</td>
-      <td class="${typeCls}">${type}</td>
-      <td>${tx.Value || "—"}</td>
-      <td>${tx["ΔOwn"] || "—"}</td>
+      <td class="${typeCls}">${escapeHtml(type)}</td>
+      <td>${escapeHtml(tx.Value || "—")}</td>
+      <td>${escapeHtml(tx["ΔOwn"] || "—")}</td>
       <td>${in3m ? "<span class=\"badge badge-green\">3M</span>" : ""}</td>
     </tr>`;
   }).join("");
