@@ -116,8 +116,8 @@ function insiderRow(g, today, yesterday) {
     <td>${dayTag(g.filedate, today, yesterday)}</td>
     <td class="ty-move ${cls}">${g.buy ? "▲ BUY" : "▼ SELL"}</td>
     <td class="ty-num ${cls}" style="font-weight:600">${fmtCompactUsd(g.total)}${cnt}</td>
-    <td class="ty-role">${g.role || "—"}</td>
-    <td class="subtext">${g.traded ? shortDate(g.traded) : "—"}</td>
+    <td class="ty-role">${g.role ? escapeHtml(g.role) : "—"}</td>
+    <td class="subtext">${g.traded ? escapeHtml(shortDate(g.traded)) : "—"}</td>
   </tr>`;
 }
 

@@ -3,7 +3,7 @@ import hashlib
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -26,6 +26,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Stocki", lifespan=lifespan)
+
+
+# Baseline defense-in-depth. No CSP: the frontend leans on inline on* handlers and inline styles
+# throughout, which a strict script-src/style-src would break — clickjacking + MIME-sniff guards
+# are the cheap wins that don't require refactoring all of static/js first.
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    return response
+
 
 app.include_router(refresh.router, prefix="/api")
 app.include_router(lookup.router, prefix="/api")
