@@ -26,7 +26,10 @@ from util import parse_iso_aware, utcnow_iso
 
 logger = logging.getLogger(__name__)
 
-engine: AsyncEngine = create_async_engine(DATABASE_URL, pool_size=10, max_overflow=5)
+# pool_size must exceed refresh_all's batch_size (scheduler/worker.py, currently 30): refresh_one
+# holds its session — and thus a pooled connection — across the whole multi-second fetch chain, so a
+# 30-wide gather needs 30 concurrent connections or the tail tasks time out waiting and fail silently.
+engine: AsyncEngine = create_async_engine(DATABASE_URL, pool_size=32, max_overflow=8)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 

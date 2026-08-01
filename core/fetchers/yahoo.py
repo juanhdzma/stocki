@@ -358,11 +358,14 @@ def _compute_dilution_rate(t: yf.Ticker) -> float | None:
 # ── Earnings dates ────────────────────────────────────────────────────────────
 
 
-def _compute_earnings_events(t: yf.Ticker, limit: int = 12) -> list[dict]:
+def _compute_earnings_events(t: yf.Ticker, limit: int = 12) -> list[dict] | None:
     """Earnings calendar rows from yfinance, keeping the report datetime (ET, so the time-of-day is
     known) and the EPS estimate/reported/surprise. `reported_eps` is None until a quarter is reported
     — the upcoming/reported split the "today & yesterday" section keys off. yfinance exposes no
-    revenue actual-vs-estimate, so only EPS is carried."""
+    revenue actual-vs-estimate, so only EPS is carried.
+
+    Returns [] for a genuinely empty calendar, None for a real fetch failure — the caller relies on
+    that distinction to avoid caching a transient error as success for the full earnings TTL."""
     try:
         df = t.get_earnings_dates(limit=limit)
         if df is None or df.empty:
@@ -384,13 +387,15 @@ def _compute_earnings_events(t: yf.Ticker, limit: int = 12) -> list[dict]:
         return out
     except Exception as exc:
         log.debug("earnings-events fetch failed: %s", exc)
-        return []
+        return None
 
 
 # ── Earnings execution track record ───────────────────────────────────────────
 
 
-def _compute_earnings_history_stats(t: yf.Ticker, quarters: int = 4) -> tuple[float | None, dict | None]:
+def _compute_earnings_history_stats(
+    t: yf.Ticker, quarters: int = 4
+) -> tuple[float | None, dict | None]:
     """(beat_rate over the last N quarters, latest quarter's actual-vs-estimate).
 
     The latest-result half is a fallback for the just-reported EPS: get_earnings_dates transiently
@@ -507,17 +512,19 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
     # crumb. These are independent Yahoo endpoints, so fan them out instead of running them
     # serially (measured ~5.8s/ticker serial). Each gets its own yf.Ticker instance — sharing
     # one across threads serializes internally (a shared session/cache lock), erasing the gain.
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=6) as ex:
         fut_dilution = ex.submit(_compute_dilution_rate, yf.Ticker(ticker))
         fut_beat = ex.submit(_compute_earnings_history_stats, yf.Ticker(ticker))
         fut_eps = ex.submit(_compute_eps_estimate_revision, yf.Ticker(ticker))
         fut_rec = ex.submit(_fetch_recommendation_counts, yf.Ticker(ticker))
         fut_qest = ex.submit(_compute_next_earnings_estimate, yf.Ticker(ticker))
+        fut_fx = ex.submit(_fetch_fx_rate, info.get("financialCurrency"), info.get("currency"))
         dilution_rate = fut_dilution.result()
         earnings_beat_rate, latest_earnings_result = fut_beat.result()
         eps_estimate_curr_fy, eps_estimate_curr_fy_90d_ago = fut_eps.result()
         _rec_counts = fut_rec.result()
         next_earnings_eps_est = fut_qest.result()
+        fx_rate = fut_fx.result()
 
     returns = _compute_returns(ticker, hist)
     pct_from_1w_high = _compute_1w_pct(ticker, price, hist)
@@ -577,7 +584,7 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
         "financial_currency": info.get("financialCurrency"),
         # FX rate financial_currency -> price currency, so scores can convert local-currency
         # fundamentals (FCF) into the price currency instead of dropping the signal entirely.
-        "fx_rate": _fetch_fx_rate(info.get("financialCurrency"), info.get("currency")),
+        "fx_rate": fx_rate,
         # Valuation multiples (current)
         "trailing_pe": _f(info.get("trailingPE")),
         "forward_pe": _f(info.get("forwardPE")),
@@ -628,9 +635,10 @@ def fetch_market_snapshot(ticker: str, hist: pd.DataFrame | None = None) -> dict
     }
 
 
-def fetch_earnings(ticker: str) -> list[dict]:
-    """Earnings events (rich rows). The worker derives the plain date list from these for the
-    consumers that still want it (E-Nd flag, insider post-earnings bonus)."""
+def fetch_earnings(ticker: str) -> list[dict] | None:
+    """Earnings events (rich rows), or None on a real fetch failure. The worker derives the plain
+    date list from these for the consumers that still want it (E-Nd flag, insider post-earnings
+    bonus)."""
     return _compute_earnings_events(yf.Ticker(ticker))
 
 

@@ -261,6 +261,125 @@ async def test_refresh_one_batches_history_when_none_given():
     mock_fetch.assert_called_once_with("PLTR", "FAKE_HIST")
 
 
+@pytest.mark.asyncio
+async def test_refresh_one_continues_when_snapshot_fails():
+    """A snapshot fetch failure must not abort the independent insider/earnings/fundamentals
+    fetches — each has its own TTL gate and the merge branch already handles snapshot=None."""
+    from scheduler.worker import refresh_one
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("scheduler.worker.AsyncSessionLocal", return_value=mock_session),
+        patch("scheduler.worker._should_fetch_snapshot", new_callable=AsyncMock, return_value=True),
+        patch("scheduler.worker.batch_download_history", return_value=None),
+        patch("scheduler.worker.fetch_market_snapshot", side_effect=RuntimeError("yahoo down")),
+        patch(
+            "scheduler.worker.read_snapshot",
+            new_callable=AsyncMock,
+            return_value={"insider_transactions": []},
+        ),
+        patch("scheduler.worker.should_fetch", new_callable=AsyncMock, return_value=True),
+        patch("scheduler.worker.fetch_insider_transactions", return_value=[{"x": 1}]) as mock_ins,
+        patch("scheduler.worker.fetch_earnings", return_value=[]) as mock_earn,
+        patch("scheduler.worker.fetch_fundamentals", return_value=[]) as mock_funds,
+        patch("scheduler.worker.write_snapshot", new_callable=AsyncMock),
+        patch("scheduler.worker.set_last_fetch", new_callable=AsyncMock),
+        patch("scheduler.worker.has_fundamentals", new_callable=AsyncMock, return_value=True),
+        patch("scheduler.worker.read_all_fundamentals", new_callable=AsyncMock, return_value=[]),
+        patch("scheduler.worker.write_score_history_if_missing", new_callable=AsyncMock),
+        patch("scheduler.worker.compute_all", return_value={"composite_long": {"score": None}}),
+    ):
+        await refresh_one("TEST")
+
+    mock_ins.assert_called_once()
+    mock_earn.assert_called_once()
+    mock_funds.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_earnings_ttl_not_updated_on_fetch_failure():
+    """fetch_earnings returning None (a real failure, vs [] = genuinely no events) must not stamp
+    the earnings timestamp, or the 14-day TTL would suppress retries and blank E-Nd silently."""
+    from scheduler.worker import refresh_one
+
+    set_fetch_calls = []
+
+    async def track(session, ticker, data_type):
+        set_fetch_calls.append(data_type)
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("scheduler.worker.AsyncSessionLocal", return_value=mock_session),
+        patch("scheduler.worker._should_fetch_snapshot", new_callable=AsyncMock, return_value=True),
+        patch("scheduler.worker.batch_download_history", return_value=None),
+        patch("scheduler.worker.fetch_market_snapshot", return_value={"price": 100.0}),
+        patch("scheduler.worker.read_snapshot", new_callable=AsyncMock, return_value=None),
+        patch("scheduler.worker.should_fetch", new_callable=AsyncMock, return_value=True),
+        patch("scheduler.worker.fetch_insider_transactions", return_value=None),
+        patch("scheduler.worker.fetch_earnings", return_value=None),
+        patch("scheduler.worker.fetch_fundamentals", return_value=[]),
+        patch("scheduler.worker.write_snapshot", new_callable=AsyncMock),
+        patch("scheduler.worker.set_last_fetch", side_effect=track),
+        patch("scheduler.worker.has_fundamentals", new_callable=AsyncMock, return_value=True),
+        patch("scheduler.worker.read_all_fundamentals", new_callable=AsyncMock, return_value=[]),
+        patch("scheduler.worker.write_score_history_if_missing", new_callable=AsyncMock),
+        patch("scheduler.worker.compute_all", return_value={"composite_long": {"score": None}}),
+    ):
+        await refresh_one("TEST")
+
+    assert "earnings" not in set_fetch_calls
+    assert "snapshot" in set_fetch_calls  # snapshot itself succeeded and was stamped
+
+
+@pytest.mark.asyncio
+async def test_watchlist_isolates_one_bad_snapshot():
+    """A single malformed snapshot must yield None for that ticker only, not 500 the whole
+    multi-ticker response and blank out every other row."""
+    from api.routers import watchlist as wl
+
+    good = MagicMock(ticker="GOOD", data_json="{}", refreshed_at="t")
+    bad = MagicMock(ticker="BAD", data_json="{}", refreshed_at="t")
+    scalars = MagicMock()
+    scalars.all.return_value = [good, bad]
+    exec_result = MagicMock()
+    exec_result.scalars.return_value = scalars
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_session.execute = AsyncMock(return_value=exec_result)
+
+    def fake_build(ticker, *a, **k):
+        if ticker == "BAD":
+            raise ValueError("corrupt snapshot")
+        return {"ok": True}
+
+    with (
+        patch("api.routers.watchlist.AsyncSessionLocal", return_value=mock_session),
+        patch(
+            "api.routers.watchlist.read_all_fundamentals_batch",
+            new_callable=AsyncMock,
+            return_value={},
+        ),
+        patch(
+            "api.routers.watchlist.read_score_history_reference_batch",
+            new_callable=AsyncMock,
+            return_value={},
+        ),
+        patch("api.routers.watchlist.build_payload", side_effect=fake_build),
+    ):
+        result = await wl.get_watchlist_data(tickers="GOOD,BAD")
+
+    assert result["GOOD"] == {"ok": True}
+    assert result["BAD"] is None
+
+
 # ── lists / favorites ─────────────────────────────────────────────────────────
 
 

@@ -133,16 +133,22 @@ async def get_watchlist_data(tickers: str = "", full: bool = False):
             if not rec:
                 out[ticker] = None
                 continue
-            data_json, refreshed_at = rec
-            snap = json.loads(data_json)
-            out[ticker] = build_payload(
-                ticker,
-                snap,
-                funds_map.get(ticker, []),
-                refreshed_at,
-                history_map.get(ticker),
-                full=full,
-            )
+            # Isolate per ticker: a single malformed snapshot must not 500 the whole
+            # multi-ticker response and blank out every other row.
+            try:
+                data_json, refreshed_at = rec
+                snap = json.loads(data_json)
+                out[ticker] = build_payload(
+                    ticker,
+                    snap,
+                    funds_map.get(ticker, []),
+                    refreshed_at,
+                    history_map.get(ticker),
+                    full=full,
+                )
+            except Exception:
+                log.exception("[%s] payload build failed", ticker)
+                out[ticker] = None
         return out
 
     return await asyncio.to_thread(_build)

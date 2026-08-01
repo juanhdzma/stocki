@@ -126,9 +126,10 @@ async def refresh_one(ticker: str, hist=None, force: bool = False) -> None:
                     snapshot = await asyncio.to_thread(fetch_market_snapshot, ticker, hist)
                     errs.discard("snapshot")
                 except Exception as exc:
+                    # Don't abort: insider/earnings/fundamentals are independent fetches with
+                    # their own TTL gates, and the merge branch below already handles snapshot=None.
                     log.error("[%s] snapshot fetch failed: %s", ticker, exc)
                     errs.add("snapshot")
-                    return
             else:
                 log.info("[%s] snapshot cached — market closed", ticker)
 
@@ -154,9 +155,16 @@ async def refresh_one(ticker: str, hist=None, force: bool = False) -> None:
                 log.info("[%s] fetching earnings", ticker)
                 try:
                     earnings_events = await asyncio.to_thread(fetch_earnings, ticker)
-                    earnings_dates = [e["date"] for e in earnings_events]
-                    await set_last_fetch(session, ticker, "earnings")
-                    errs.discard("earnings")
+                    if earnings_events is not None:
+                        earnings_dates = [e["date"] for e in earnings_events]
+                        await set_last_fetch(session, ticker, "earnings")
+                        errs.discard("earnings")
+                    else:
+                        # None = real fetch failure (vs [] = genuinely no events). Don't stamp the
+                        # timestamp, or the 14-day TTL would suppress retries and blank E-Nd silently.
+                        log.warning("[%s] earnings fetch failed", ticker)
+                        errs.add("earnings")
+                        earnings_dates = None
                 except Exception as exc:
                     log.warning("[%s] earnings fetch failed: %s", ticker, exc)
                     errs.add("earnings")
