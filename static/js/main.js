@@ -10,6 +10,7 @@ import { priceChartHover, chartHoverEnd } from "./charts.js";
 
 async function loadLists() {
   const res = await fetch("/api/lists");
+  if (!res.ok) throw new Error("lists " + res.status);
   const data = await res.json();
   state.watchlist = data.watchlist;
   state.favorites = data.favorites || [];
@@ -62,18 +63,18 @@ function renderWlFilterBar() {
   const active = f.action || f.signal || f.sector || f.flag || f.search;
   return `<div class="wl-filters">
     <input id="wl-search" class="wl-filter wl-search${f.search ? " wl-filter-on" : ""}" type="text"
-      placeholder="Search ticker…" autocomplete="off" spellcheck="false" value="${(f.search || "").replace(/"/g, "&quot;")}"
+      placeholder="Search ticker…" aria-label="Search ticker" autocomplete="off" spellcheck="false" value="${(f.search || "").replace(/"/g, "&quot;")}"
       oninput="setWlFilter('search', this.value)">
-    <select class="wl-filter${f.action ? " wl-filter-on" : ""}" onchange="setWlFilter('action', this.value)">
+    <select class="wl-filter${f.action ? " wl-filter-on" : ""}" aria-label="Filter by rating" onchange="setWlFilter('action', this.value)">
       <option value="">Rating: all</option>${actions.map(([v, l]) => opt(v, l, f.action)).join("")}
     </select>
-    <select class="wl-filter${f.signal ? " wl-filter-on" : ""}" onchange="setWlFilter('signal', this.value)">
+    <select class="wl-filter${f.signal ? " wl-filter-on" : ""}" aria-label="Filter by signal" onchange="setWlFilter('signal', this.value)">
       <option value="">Signal: all</option>${opt("buy", "Buy", f.signal)}${opt("wait", "Wait", f.signal)}
     </select>
-    <select class="wl-filter${f.sector ? " wl-filter-on" : ""}" onchange="setWlFilter('sector', this.value)">
+    <select class="wl-filter${f.sector ? " wl-filter-on" : ""}" aria-label="Filter by sector" onchange="setWlFilter('sector', this.value)">
       <option value="">Sector: all</option>${sectors.map(s => opt(s, s, f.sector)).join("")}
     </select>
-    ${flags.length ? `<select class="wl-filter${f.flag ? " wl-filter-on" : ""}" onchange="setWlFilter('flag', this.value)">
+    ${flags.length ? `<select class="wl-filter${f.flag ? " wl-filter-on" : ""}" aria-label="Filter by flag" onchange="setWlFilter('flag', this.value)">
       <option value="">Flag: all</option>${flags.map(k => opt(k, flagLabels[k] || k, f.flag)).join("")}
     </select>` : ""}
     ${active ? `<button class="wl-filter-clear" onclick="clearWlFilters()">✕ clear</button>` : ""}
@@ -82,8 +83,9 @@ function renderWlFilterBar() {
 
 function rowActions(t) {
   const fav = state.favorites.includes(t);
-  return `<button class="btn-star${fav ? " starred" : ""}" title="${fav ? "Remove from favorites" : "Add to favorites"}" onclick="toggleFavorite('${t}')">${fav ? "★" : "☆"}</button>
-    <button class="btn-remove" onclick="removeTicker('${t}')">✕</button>`;
+  const favLabel = fav ? `Remove ${t} from favorites` : `Add ${t} to favorites`;
+  return `<button class="btn-star${fav ? " starred" : ""}" title="${favLabel}" aria-label="${favLabel}" onclick="toggleFavorite('${t}')">${fav ? "★" : "☆"}</button>
+    <button class="btn-remove" aria-label="Remove ${t}" onclick="removeTicker('${t}')">✕</button>`;
 }
 
 // The home is split into independent mounts so a sort/filter/star only re-renders the
@@ -156,11 +158,16 @@ async function showHome() {
   const dash = document.getElementById("dashboard");
   dash.innerHTML = `<p class="subtext center">Loading…</p>`;
 
-  try { await loadLists(); } catch (e) { console.error("Failed to load lists:", e); }
+  let listsFailed = false;
+  try { await loadLists(); } catch (e) { console.error("Failed to load lists:", e); listsFailed = true; }
 
   const allTickers = [...new Set([...state.favorites, ...state.watchlist])];
   if (!allTickers.length) {
-    dash.innerHTML = `<p class="subtext center" style="margin-top:60px">Add a ticker above to start.</p>`;
+    // A failed load leaves the lists empty too — don't tell a user with an existing watchlist to
+    // "add a ticker", which reads as data loss. Distinguish the two states.
+    dash.innerHTML = listsFailed
+      ? `<p class="subtext center" style="margin-top:60px">Couldn't load your list. <button class="btn" onclick="location.reload()">Retry</button></p>`
+      : `<p class="subtext center" style="margin-top:60px">Add a ticker above to start.</p>`;
     return;
   }
 
@@ -429,7 +436,9 @@ function parseYahooCsv(text) {
   const tickers = [...new Set(
     lines.slice(1)
       .map(line => (line.split(",")[symbolIdx] || "").trim().toUpperCase())
-      .filter(t => t.length > 0 && t.length <= 12 && !t.startsWith("^"))  // ^RUT etc. are indices, not tickers
+      // Same charset the server's _TICKER_RE enforces — a CSV Symbol cell flows unescaped into
+      // inline onclick handlers, so reject anything that isn't a plain ticker (^RUT indices too).
+      .filter(t => /^[A-Z0-9.\-]{1,12}$/.test(t) && !t.startsWith("^"))
   )];
   return { tickers, error: null };
 }

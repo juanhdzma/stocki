@@ -2,6 +2,13 @@ import { state } from "./state.js";
 import { timeAgo, escapeHtml } from "./format.js";
 import { scoreColor, pctScoreColor, actionBadge, fmtBuyTargetHtml, fmt52wRangeHtml } from "./colors.js";
 
+// Score/delta/buy-target tooltips were mouse-only (onmouseenter/leave). Mirror them onto focus
+// (keyboard) and click (touch, which has no hover) so the score breakdowns — the densest part of
+// the UI — are reachable without a mouse. `call` is the show-tooltip invocation string; the click
+// stops propagation so the tap-outside-to-dismiss listener in overlay.js doesn't instantly re-hide.
+const tipAttrs = call =>
+  `tabindex="0" onmouseenter="${call}" onfocus="${call}" onmouseleave="hideTooltip()" onblur="hideTooltip()" onclick="event.stopPropagation();${call}" onkeydown="if(event.key==='Escape')hideTooltip()"`;
+
 export function getScore(d, col) {
   if (!d) return null;
   const snap = d.snapshot || {};
@@ -159,29 +166,23 @@ export function renderRow(ticker, actionCell) {
     <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_1w)}</td>
     <td style="font-variant-numeric:tabular-nums">${fmtPct(ret.ticker_return_1m, 0.25)}</td>
     <td style="font-variant-numeric:tabular-nums"
-      onmouseenter="showBuyTargetTooltip(event,'${ticker}')" onmouseleave="hideTooltip()">${fmtBuyTargetHtml(buyTarget)}</td>
+      ${tipAttrs(`showBuyTargetTooltip(event,'${ticker}')`)}>${fmtBuyTargetHtml(buyTarget)}</td>
   `;
 
   const makeScoreCell = (c, extraClass = "") => {
-    if (!ready) return `<td class="s-null ${extraClass}"
-      onmouseenter="showScoreTooltip(event,'${ticker}','${c.key}')"
-      onmouseleave="hideTooltip()">?</td>`;
+    const call = `showScoreTooltip(event,'${ticker}','${c.key}')`;
+    if (!ready) return `<td class="s-null ${extraClass}" ${tipAttrs(call)}>?</td>`;
     const s = getScore(d, c.key);
-    return `<td class="${scoreColor(s)} ${extraClass}"
-      onmouseenter="showScoreTooltip(event,'${ticker}','${c.key}')"
-      onmouseleave="hideTooltip()">${s != null ? s.toFixed(1) : "—"}</td>`;
+    return `<td class="${scoreColor(s)} ${extraClass}" ${tipAttrs(call)}>${s != null ? s.toFixed(1) : "—"}</td>`;
   };
 
   const deltaCell = (() => {
     const delta = d.score_change?.composite?.delta;
-    if (!ready || delta == null) return `<td class="s-null col-sep"
-      onmouseenter="showDeltaTooltip(event,'${ticker}')"
-      onmouseleave="hideTooltip()">—</td>`;
+    const call = `showDeltaTooltip(event,'${ticker}')`;
+    if (!ready || delta == null) return `<td class="s-null col-sep" ${tipAttrs(call)}>—</td>`;
     const cls  = delta > 0.05 ? "s-green" : delta < -0.05 ? "s-red" : "s-yellow";
     const sign = delta > 0 ? "+" : "";
-    return `<td class="${cls} col-sep"
-      onmouseenter="showDeltaTooltip(event,'${ticker}')"
-      onmouseleave="hideTooltip()">${sign}${delta.toFixed(1)}</td>`;
+    return `<td class="${cls} col-sep" ${tipAttrs(call)}>${sign}${delta.toFixed(1)}</td>`;
   })();
 
   const intermediateCells = SCORE_COLS_INTERMEDIATE.map((c, i) => makeScoreCell(c, i === 0 ? "col-sep" : "")).join("");

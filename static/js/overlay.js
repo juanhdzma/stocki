@@ -28,3 +28,8 @@ export function showOverlay(event, html) {
   el.style.display = "block";
   positionTooltip(event, el);
 }
+
+// Touch has no mouseleave, so a tapped-open tooltip (see tipAttrs in tables.js) needs an explicit
+// dismiss. The trigger cells stopPropagation on their own click, so this only fires for taps/clicks
+// elsewhere on the page.
+document.addEventListener("click", hideTooltip);
