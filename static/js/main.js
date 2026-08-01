@@ -197,7 +197,7 @@ async function handleAddTicker() {
   const input = document.getElementById("add-input");
   if (!input) return;
   const ticker = input.value.trim().toUpperCase();
-  if (!ticker || !/^[A-Z0-9.]{1,10}$/.test(ticker)) { flashInvalid(input); return; }
+  if (!ticker || !/^[A-Z0-9.\-]{1,12}$/.test(ticker)) { flashInvalid(input); return; }
   if (state.favorites.includes(ticker) || state.watchlist.includes(ticker)) { flashInvalid(input); input.value = ""; return; }
 
   const res = await fetch(`/api/lists/${ticker}`, {method: "POST"}).catch(() => null);
@@ -403,7 +403,7 @@ function onRoute() {
   state.chartRegistry = {};  // previous view's chart hover-data — its SVGs are gone from the DOM
   const hash = window.location.hash;
   if (hash.startsWith("#ticker/")) {
-    const t = hash.slice(8).toUpperCase().replace(/[^A-Z0-9.]/g, "");
+    const t = hash.slice(8).toUpperCase().replace(/[^A-Z0-9.\-]/g, "");
     if (t) { showDetail(t); return; }
   }
   showHome();
