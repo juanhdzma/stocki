@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter
 from sqlalchemy import select
 
@@ -27,21 +25,21 @@ async def get_status(tickers: str = ""):
         )
         snap_map: set[str] = {row.ticker for row in snap_rows}
 
+        # period is "YYYY-QN" (quarterly) or "YYYY" (annual) — classify off that column alone so
+        # this hot poll skips selecting and json.loads-ing the whole fundamentals blob per row.
         fund_rows = await session.execute(
-            select(FundamentalsHistory.ticker, FundamentalsHistory.data_json).where(
+            select(FundamentalsHistory.ticker, FundamentalsHistory.period).where(
                 FundamentalsHistory.ticker.in_(ticker_list)
             )
         )
         annual_count: dict[str, int] = {}
         quarterly_count: dict[str, int] = {}
         for row in fund_rows:
-            data = json.loads(row.data_json)
-            kind = data.get("type", "")
             t = row.ticker
-            if kind == "annual":
-                annual_count[t] = annual_count.get(t, 0) + 1
-            elif kind == "quarterly":
+            if "-Q" in row.period:
                 quarterly_count[t] = quarterly_count.get(t, 0) + 1
+            else:
+                annual_count[t] = annual_count.get(t, 0) + 1
 
         ins_rows = await session.execute(
             select(FetchTimestamp.ticker)
