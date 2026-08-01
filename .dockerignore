@@ -6,3 +6,13 @@ __pycache__
 .env
 data/
 stocki.log
+
+# Ad-hoc research/backtest scripts — not imported by the app (api/core/db/scheduler), only cited
+# in comments. Kept in the repo, kept out of the prod image.
+fill_sim.py
+experiment.py
+validate.py
+bt_lab.py
+entry_lab.py
+backtest.py
+tests/

@@ -8,7 +8,7 @@ Personal stock watchlist tracker (with a starred "favorites" subset). Fetches fu
 ## Stack
 - **Backend**: FastAPI + asyncpg + SQLAlchemy (async), Python 3.12
 - **DB**: PostgreSQL 16 (Docker)
-- **Refresh**: manual/on-demand only, triggered via the API (`POST /api/refresh*`) and run as background asyncio tasks in `scheduler/worker.py`. There is **no** running scheduler despite the module name — `apscheduler` is a leftover dep and nothing starts a timer.
+- **Refresh**: manual/on-demand only, triggered via the API (`POST /api/refresh*`) and run as background asyncio tasks in `scheduler/worker.py`. There is **no** running scheduler despite the module name — nothing starts a timer.
 - **Frontend**: Vanilla JS + CSS, no framework
 - **Deploy**: Docker Compose → Portainer on `juanhdzma@192.168.78.250`, port 8503
 
