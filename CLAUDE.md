@@ -10,7 +10,7 @@ Personal stock watchlist tracker (with a starred "favorites" subset). Fetches fu
 - **DB**: PostgreSQL 16 (Docker)
 - **Refresh**: manual/on-demand only, triggered via the API (`POST /api/refresh*`) and run as background asyncio tasks in `scheduler/worker.py`. There is **no** running scheduler despite the module name — nothing starts a timer.
 - **Frontend**: Vanilla JS + CSS, no framework
-- **Deploy**: Docker Compose → Portainer on `juanhdzma@192.168.78.250`, port 8503
+- **Deploy**: Docker Compose → Portainer on `juanhdzma@192.168.78.250`, port 8503. On push to `master`, `.github/workflows/docker.yml` runs the test suite then builds and pushes `ghcr.io/juanhdzma/stocki:latest` + `:<sha>` to GHCR (paths-filtered to app source). The image is published only — the Portainer pull/redeploy is still manual.
 
 ## Commands
 
@@ -39,7 +39,7 @@ Lint/format is `ruff` (config in `pyproject.toml`): `python3 -m ruff check .` an
 ## Project layout
 ```
 api/
-  main.py                  # FastAPI app, mounts routers, serves static/index.html with cache-busted asset URLs
+  main.py                  # FastAPI app, mounts routers, serves static/index.html with cache-busted asset URLs. A middleware adds baseline security headers (X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy: same-origin) — deliberately NO CSP: the frontend uses inline on* handlers throughout, so a strict script-src would break it without refactoring all of static/js first.
   routers/
     watchlist.py           # GET /api/watchlist, /api/lists (watchlist+favorites), PATCH/POST/DELETE
     refresh.py             # POST /api/refresh

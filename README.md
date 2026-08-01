@@ -24,6 +24,10 @@ docker compose down
 
 > The database lives in a named Docker volume (`stock_data`), so it survives `docker compose down` and restarts. It's wiped only by `docker compose down -v`.
 
+## Deployment
+
+On every push to `master`, GitHub Actions (`.github/workflows/docker.yml`) runs the test suite and then builds and pushes the image to GitHub Container Registry as `ghcr.io/juanhdzma/stocki:latest` (and `:<commit-sha>`). The workflow only publishes the image — pulling and redeploying it (Portainer on the home server) stays manual.
+
 ## Loading tickers
 
 The watchlist starts empty. To populate it:
@@ -64,21 +68,21 @@ A row of cards at the top gives market context: **VIX** (with a calm→fear rang
 **Scores (0–100)** — hover any for the full breakdown:
 - **Growth** — revenue/earnings trajectory. **Quality** — profitability, balance sheet, durability. **Insiders** — conviction-weighted buy/sell activity. **Valuation** — how cheaply it trades: forward P/E, EV/EBITDA, PEG, and two sales multiples (P/S, EV/Sales), plus an analyst-upside bonus (high = cheap, low = expensive). **Long** — the weighted composite that drives the verdict.
 
-**Verdict** (per Long score): Strong Buy ≥80 · Buy ≥60 · Hold ≥40 · Sell ≥20 · Strong Sell <20.
+**Verdict** (per Long score) — a company-quality tier, not a trade call: STRONG ≥80 · SOLID ≥60 · FAIR ≥40 · WEAK ≥20 · AVOID <20. The buy/wait entry call lives only in Buy Target.
 
-**Buy Target** — is it time to buy, or wait for a dip? The target is a conservative entry price: the ~10th percentile of analyst price targets (or, for names with <10 analysts, 30% off the 52-week high), discounted further for volatile names. Hover the cell for the full breakdown.
+**Buy Target** — is it time to buy, or wait for a dip? The target is a conservative entry price: the ~17.5th percentile of the analyst price-target range (≈65% low / 35% median), or — for names with <10 analysts — the lower of 30% off the 52-week high and the 200-day SMA, discounted further for volatile names and wide analyst dispersion. Hover the cell for the full breakdown.
 - **BUY** (green) — the price is at/below the target.
 - **NEAR −X%** (amber) — almost; a small dip (≤4%) away.
 - **WAIT −X%** (red) — still expensive; wait for that dip.
 
-**Filters** — above the watchlist, filter rows by Action (verdict), Signal (buy/wait), and Sector. The count shows how many of the full list match.
+**Filters** — above the watchlist, filter rows by Rating (verdict tier), Signal (buy/wait), Sector, and Flag, plus a ticker/name search. The count shows how many of the full list match.
 
 **Risk flags** (next to the verdict):
 - `REV↓` revenue shrinking · `CYCLICAL` growth is a likely cycle peak, not durable · `$$$` expensive valuation · `E-Nd` earnings in N days · `PRICE?` quote looks wrong (>50% off prior close).
 
 **Status symbol**: `✓` data ok · `⟳` fetching · `✕` a fetch failed · `·` pending.
 
-In the **portfolio** table, a `⚠` next to your gain/loss means you're in profit but the verdict has decayed to Hold/Sell — the thesis rotted while it ran.
+**Favorites** — star any ticker to pin it into a separate **Favorites** section at the top (same scored table, no holdings/P&L). The star toggles a ticker between the watchlist and favorites.
 
 ## Environment
 
@@ -96,13 +100,12 @@ The backend is a FastAPI app. Interactive docs available at [http://localhost:85
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/lists` | All tickers with their list type (watchlist / portfolio) |
-| `POST` | `/api/lists/{ticker}` | Add a ticker (`?list_type=watchlist\|portfolio`) |
+| `GET` | `/api/lists` | Tickers split into `{watchlist, favorites}` by list type |
+| `POST` | `/api/lists/{ticker}` | Add a ticker (`?list_type=watchlist\|favorite`) |
 | `DELETE` | `/api/lists/{ticker}` | Remove a ticker |
-| `PATCH` | `/api/lists/{ticker}` | Move a ticker between lists (`?list_type=...`) |
+| `PATCH` | `/api/lists/{ticker}` | Star/unstar — move between watchlist and favorite (`?list_type=...`) |
 | `POST` | `/api/lists/import` | Replace all tickers (JSON array of strings) |
 | `GET` | `/api/watchlist` | Scored data for a comma-separated list of tickers |
-| `GET` | `/api/portfolio` | Scored data for all portfolio tickers |
 | `GET` | `/api/lookup/{ticker}` | Live fetch + cache for a single ticker |
 | `POST` | `/api/refresh` | Trigger background refresh for all tickers |
 | `POST` | `/api/refresh/{ticker}` | Trigger refresh for a single ticker |
